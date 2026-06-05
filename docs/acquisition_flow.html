@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>iRaypleVision 영상취득 동작 방식</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172026;
+      --muted: #5c6670;
+      --line: #cfd7df;
+      --panel: #ffffff;
+      --soft: #f4f7fa;
+      --blue: #1f6feb;
+      --green: #0f8b6f;
+      --red: #cc4b37;
+      --amber: #9a6b00;
+      --violet: #6b50b6;
+      --shadow: 0 8px 22px rgba(20, 36, 52, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Malgun Gothic", Arial, sans-serif;
+      color: var(--ink);
+      background: #eef3f7;
+      line-height: 1.65;
+    }
+
+    header {
+      background:
+        linear-gradient(rgba(13, 28, 43, 0.72), rgba(13, 28, 43, 0.72)),
+        repeating-linear-gradient(90deg, #20374b 0 24px, #243f56 24px 48px);
+      color: white;
+      padding: 44px 28px 34px;
+    }
+
+    .wrap {
+      width: min(1120px, calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 34px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    header p {
+      margin: 0;
+      max-width: 760px;
+      color: #d8e4ee;
+      font-size: 16px;
+    }
+
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: rgba(255, 255, 255, 0.96);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(8px);
+    }
+
+    nav .wrap {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 10px 0;
+    }
+
+    nav a {
+      flex: 0 0 auto;
+      color: var(--ink);
+      text-decoration: none;
+      border: 1px solid var(--line);
+      background: white;
+      padding: 7px 12px;
+      border-radius: 6px;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    main {
+      padding: 28px 0 56px;
+    }
+
+    section {
+      margin: 0 0 26px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 24px;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 24px;
+      line-height: 1.3;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 22px 0 10px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 12px;
+    }
+
+    code {
+      font-family: Consolas, "Cascadia Mono", monospace;
+      background: #edf2f7;
+      padding: 1px 5px;
+      border-radius: 4px;
+      color: #203040;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfcfe;
+    }
+
+    .card h3 {
+      margin-top: 0;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: white;
+      padding: 4px 9px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--blue);
+    }
+
+    .dot.green { background: var(--green); }
+    .dot.red { background: var(--red); }
+    .dot.amber { background: var(--amber); }
+    .dot.violet { background: var(--violet); }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin: 18px 0 8px;
+    }
+
+    .step {
+      position: relative;
+      min-height: 132px;
+      border: 1px solid var(--line);
+      background: var(--soft);
+      border-radius: 8px;
+      padding: 14px;
+    }
+
+    .step:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      right: -18px;
+      top: 50%;
+      width: 22px;
+      height: 2px;
+      background: var(--line);
+    }
+
+    .step:not(:last-child)::before {
+      content: "";
+      position: absolute;
+      right: -18px;
+      top: calc(50% - 4px);
+      width: 8px;
+      height: 8px;
+      border-top: 2px solid var(--line);
+      border-right: 2px solid var(--line);
+      transform: rotate(45deg);
+    }
+
+    .step strong {
+      display: block;
+      margin-bottom: 7px;
+      font-size: 16px;
+    }
+
+    .step small {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .cxp { border-top: 4px solid var(--blue); }
+    .gige { border-top: 4px solid var(--green); }
+    .ui { border-top: 4px solid var(--amber); }
+    .color { border-top: 4px solid var(--violet); }
+
+    .diagram {
+      display: grid;
+      grid-template-columns: 1.05fr 0.9fr 1.1fr;
+      gap: 14px;
+      align-items: stretch;
+      margin-top: 16px;
+    }
+
+    .lane {
+      border: 1px solid var(--line);
+      background: #fbfcfe;
+      border-radius: 8px;
+      padding: 14px;
+    }
+
+    .lane-title {
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .chip {
+      display: block;
+      background: white;
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--blue);
+      border-radius: 6px;
+      padding: 9px 10px;
+      margin: 8px 0;
+      font-size: 14px;
+    }
+
+    .chip.green { border-left-color: var(--green); }
+    .chip.amber { border-left-color: var(--amber); }
+    .chip.violet { border-left-color: var(--violet); }
+
+    .arrow-down {
+      text-align: center;
+      color: var(--muted);
+      font-weight: 700;
+      margin: 2px 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 10px;
+      vertical-align: top;
+    }
+
+    th {
+      background: #edf2f7;
+      text-align: left;
+    }
+
+    .note {
+      border-left: 5px solid var(--amber);
+      background: #fff8e6;
+      padding: 12px 14px;
+      border-radius: 6px;
+      margin-top: 12px;
+    }
+
+    .ok {
+      border-left-color: var(--green);
+      background: #edf8f5;
+    }
+
+    .warn {
+      border-left-color: var(--red);
+      background: #fff1ee;
+    }
+
+    .two-col {
+      columns: 2;
+      column-gap: 28px;
+    }
+
+    ul,
+    ol {
+      padding-left: 22px;
+      margin: 8px 0 0;
+    }
+
+    li {
+      margin: 4px 0;
+    }
+
+    .mini-board {
+      display: grid;
+      grid-template-columns: repeat(4, 28px);
+      grid-template-rows: repeat(4, 28px);
+      gap: 3px;
+      margin: 10px 0 4px;
+    }
+
+    .pixel {
+      display: grid;
+      place-items: center;
+      border-radius: 4px;
+      color: white;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .r { background: #c7352f; }
+    .g { background: #228f5f; }
+    .b { background: #2d5fc4; }
+
+    footer {
+      color: var(--muted);
+      font-size: 13px;
+      padding: 0 0 40px;
+    }
+
+    @media (max-width: 850px) {
+      h1 {
+        font-size: 28px;
+      }
+
+      .grid,
+      .diagram {
+        grid-template-columns: 1fr;
+      }
+
+      .flow {
+        grid-template-columns: 1fr;
+      }
+
+      .step:not(:last-child)::before,
+      .step:not(:last-child)::after {
+        display: none;
+      }
+
+      .two-col {
+        columns: 1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>iRaypleVision 영상취득 동작 방식</h1>
+      <p>MFC를 모르는 사람도 버튼 클릭부터 카메라 프레임이 화면에 표시되기까지의 흐름을 따라갈 수 있도록 정리한 설명 문서입니다.</p>
+    </div>
+  </header>
+
+  <nav>
+    <div class="wrap">
+      <a href="#overview">전체 그림</a>
+      <a href="#mfc">MFC 역할</a>
+      <a href="#connect">Connect</a>
+      <a href="#grab">Start Grab</a>
+      <a href="#trigger">Software Trigger</a>
+      <a href="#exposure">Exposure</a>
+      <a href="#bayer">Bayer Debayer</a>
+      <a href="#files">수정 위치</a>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <section id="overview">
+      <h2>1. 전체 그림</h2>
+      <p>이 프로그램은 MFC가 직접 카메라를 제어하는 구조가 아닙니다. MFC는 버튼과 화면 영역을 제공하고, 실제 카메라 연결과 프레임 수신은 SDK가 담당합니다.</p>
+
+      <div class="flow">
+        <div class="step ui">
+          <strong>사용자 버튼 클릭</strong>
+          <small>Connect, Start Grab, Stop, Snap, Software Trigger, Exposure Set</small>
+        </div>
+        <div class="step cxp">
+          <strong>SDK 객체 생성</strong>
+          <small>CXP는 Sapera LT, GigE는 MV Viewer SDK 객체를 생성합니다.</small>
+        </div>
+        <div class="step color">
+          <strong>프레임 수신/변환</strong>
+          <small>Mono는 바로 표시하고, Bayer는 RGB 컬러로 Debayer합니다.</small>
+        </div>
+        <div class="step gige">
+          <strong>화면 표시</strong>
+          <small>MFC dialog 안의 검은 영상 영역에 최신 프레임을 그립니다.</small>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span class="tag"><span class="dot amber"></span>MFC UI</span>
+        <span class="tag"><span class="dot"></span>Sapera LT</span>
+        <span class="tag"><span class="dot green"></span>MV Viewer SDK</span>
+        <span class="tag"><span class="dot violet"></span>Color Conversion</span>
+      </div>
+    </section>
+
+    <section id="mfc">
+      <h2>2. MFC는 무엇을 하나요?</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>MFC가 담당하는 것</h3>
+          <ul>
+            <li>버튼, 체크박스, 입력창 배치</li>
+            <li>버튼 클릭 이벤트를 함수에 연결</li>
+            <li>상태 메시지 표시</li>
+            <li>영상 표시용 창 핸들 제공</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>SDK가 담당하는 것</h3>
+          <ul>
+            <li>카메라/프레임그래버 검색</li>
+            <li>카메라 연결 및 파라미터 설정</li>
+            <li>프레임 버퍼 생성</li>
+            <li>영상 취득, 트리거, 노출 제어</li>
+            <li>Bayer 색 변환</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="note ok">
+        MFC를 처음 본다면 <code>BEGIN_MESSAGE_MAP</code>을 먼저 보면 됩니다. 여기에서 "어떤 버튼을 누르면 어떤 함수가 실행되는지"가 정해집니다.
+      </div>
+    </section>
+
+    <section id="connect">
+      <h2>3. Connect 버튼을 누르면 생기는 일</h2>
+      <p><code>Connect</code>는 영상취득을 시작하는 버튼이 아니라, 영상취득에 필요한 객체들을 준비하는 버튼입니다.</p>
+
+      <div class="diagram">
+        <div class="lane">
+          <div class="lane-title">CXP / Sapera LT</div>
+          <span class="chip">Sapera 서버와 Acquisition 리소스 검색</span>
+          <div class="arrow-down">↓</div>
+          <span class="chip">사용자가 <code>.ccf</code> 파일 선택</span>
+          <div class="arrow-down">↓</div>
+          <span class="chip">SapAcquisition 생성</span>
+          <span class="chip">SapBufferWithTrash 생성</span>
+          <span class="chip">SapAcqToBuf 생성</span>
+          <span class="chip">SapView 생성</span>
+        </div>
+
+        <div class="lane">
+          <div class="lane-title">Bayer 옵션</div>
+          <span class="chip violet">체크 안 함: 원본 buffer 표시</span>
+          <div class="arrow-down">또는</div>
+          <span class="chip violet">체크 함: SapColorConversion 생성</span>
+          <span class="chip violet">RGB8888 output buffer 표시</span>
+        </div>
+
+        <div class="lane">
+          <div class="lane-title">GigE / MV Viewer SDK</div>
+          <span class="chip green">IMV_EnumDevices</span>
+          <div class="arrow-down">↓</div>
+          <span class="chip green">IMV_CreateHandle</span>
+          <div class="arrow-down">↓</div>
+          <span class="chip green">IMV_Open</span>
+          <div class="arrow-down">↓</div>
+          <span class="chip green">AcquisitionMode, Exposure 초기값 설정</span>
+        </div>
+      </div>
+
+      <div class="note">
+        CXP에서 <code>Bayer CPU Debayer</code>는 Connect 전에 선택합니다. 색 변환용 output buffer를 Connect 과정에서 만들어서 <code>SapView</code>에 연결하기 때문입니다.
+      </div>
+    </section>
+
+    <section id="grab">
+      <h2>4. Start Grab부터 화면 표시까지</h2>
+      <p>Start Grab은 "카메라에서 프레임을 계속 받아오기 시작하라"는 명령입니다. CXP와 GigE는 SDK가 달라 내부 흐름이 조금 다릅니다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>구분</th>
+            <th>CXP</th>
+            <th>GigE</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>시작 함수</td>
+            <td><code>m_xfer-&gt;Grab()</code></td>
+            <td><code>IMV_StartGrabbing()</code></td>
+          </tr>
+          <tr>
+            <td>프레임 수신</td>
+            <td>Sapera transfer callback 호출</td>
+            <td>worker thread에서 <code>IMV_GetFrame()</code> 반복</td>
+          </tr>
+          <tr>
+            <td>Mono 표시</td>
+            <td><code>SapView::Show()</code></td>
+            <td>Mono8을 BGRA grayscale로 변환 후 <code>StretchDIBits()</code></td>
+          </tr>
+          <tr>
+            <td>Bayer Color 표시</td>
+            <td><code>SapColorConversion::Convert()</code> 후 <code>SapView::Show()</code></td>
+            <td><code>IMV_PixelConvert()</code>로 BGRA8 변환 후 <code>StretchDIBits()</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>CXP 프레임 흐름</h3>
+      <div class="flow">
+        <div class="step cxp">
+          <strong><code>Grab()</code></strong>
+          <small>프레임그래버가 카메라 데이터를 받기 시작합니다.</small>
+        </div>
+        <div class="step cxp">
+          <strong>Buffer 채움</strong>
+          <small><code>SapBufferWithTrash</code>에 프레임이 들어옵니다.</small>
+        </div>
+        <div class="step color">
+          <strong>Callback</strong>
+          <small>Bayer면 conversion processing 실행, Mono면 바로 표시합니다.</small>
+        </div>
+        <div class="step ui">
+          <strong>Display</strong>
+          <small><code>SapView::Show()</code>로 MFC 화면 영역에 표시합니다.</small>
+        </div>
+      </div>
+
+      <h3>GigE 프레임 흐름</h3>
+      <div class="flow">
+        <div class="step gige">
+          <strong><code>StartGrabbing()</code></strong>
+          <small>GigE 카메라 acquisition을 시작합니다.</small>
+        </div>
+        <div class="step gige">
+          <strong><code>GetFrame()</code></strong>
+          <small>worker thread가 프레임을 가져옵니다.</small>
+        </div>
+        <div class="step color">
+          <strong>Pixel Convert</strong>
+          <small>Mono8 또는 BGRA8로 변환합니다.</small>
+        </div>
+        <div class="step ui">
+          <strong>GDI Display</strong>
+          <small><code>StretchDIBits()</code>로 화면에 그립니다.</small>
+        </div>
+      </div>
+    </section>
+
+    <section id="trigger">
+      <h2>5. Software Trigger는 왜 Start Grab 후에 누르나요?</h2>
+      <p>소프트웨어 트리거는 "지금 한 장 찍어라"라는 카메라 명령입니다. 하지만 프로그램이 프레임을 받을 준비를 하지 않으면, 카메라가 찍은 프레임을 프로그램이 놓칠 수 있습니다.</p>
+
+      <div class="flow">
+        <div class="step ui">
+          <strong>Trigger mode 체크</strong>
+          <small>카메라를 자유 실행 모드가 아니라 trigger 대기 모드로 바꿉니다.</small>
+        </div>
+        <div class="step cxp">
+          <strong>Start Grab</strong>
+          <small>프로그램이 프레임을 받을 준비를 합니다.</small>
+        </div>
+        <div class="step gige">
+          <strong>Software Trigger</strong>
+          <small>카메라에 한 프레임 촬영 명령을 보냅니다.</small>
+        </div>
+        <div class="step ui">
+          <strong>프레임 표시</strong>
+          <small>트리거마다 한 장씩 들어와서 표시됩니다.</small>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>설정</th>
+            <th>의미</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>TriggerSelector = FrameStart</code></td>
+            <td>프레임 시작을 트리거 대상으로 선택합니다.</td>
+          </tr>
+          <tr>
+            <td><code>TriggerSource = Software</code></td>
+            <td>외부 라인이 아니라 API 명령으로 트리거합니다.</td>
+          </tr>
+          <tr>
+            <td><code>TriggerMode = On</code></td>
+            <td>카메라를 트리거 대기 상태로 둡니다.</td>
+          </tr>
+          <tr>
+            <td><code>TriggerSoftware</code></td>
+            <td>실제로 한 장 찍으라는 명령입니다.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="exposure">
+      <h2>6. Exposure 변경은 무엇을 하나요?</h2>
+      <p><code>Exposure</code>는 센서가 빛을 받는 시간입니다. 값이 길수록 밝아지지만 움직임이 흐려질 수 있고, 값이 짧을수록 어두워지지만 빠른 물체에 유리합니다.</p>
+
+      <div class="grid">
+        <div class="card">
+          <h3>설정 순서</h3>
+          <ol>
+            <li>입력창에서 microsecond 단위 값을 읽습니다.</li>
+            <li><code>ExposureAuto = Off</code>를 시도합니다.</li>
+            <li><code>ExposureTime</code> 설정을 시도합니다.</li>
+            <li>실패하면 <code>ExposureTimeAbs</code>를 시도합니다.</li>
+            <li>CXP는 Sapera acquisition parameter fallback도 시도합니다.</li>
+          </ol>
+        </div>
+        <div class="card">
+          <h3>Grab 중 변경</h3>
+          <p>현재 구현은 Grab 중에도 Exposure Set 버튼을 누를 수 있게 되어 있습니다. 단, 실제 반영 여부는 카메라 feature가 acquisition 중 writable인지에 따라 달라질 수 있습니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="bayer">
+      <h2>7. Bayer와 Debayer 이해하기</h2>
+      <p>Bayer Color 카메라는 픽셀 하나가 완성된 RGB 값을 갖고 있지 않습니다. 센서 위에 R/G/B 필터가 배열되어 있고, 각 픽셀은 한 색 정보만 갖습니다.</p>
+
+      <div class="grid">
+        <div class="card">
+          <h3>Bayer raw 패턴</h3>
+          <div class="mini-board" aria-label="Bayer pattern">
+            <div class="pixel r">R</div><div class="pixel g">G</div><div class="pixel r">R</div><div class="pixel g">G</div>
+            <div class="pixel g">G</div><div class="pixel b">B</div><div class="pixel g">G</div><div class="pixel b">B</div>
+            <div class="pixel r">R</div><div class="pixel g">G</div><div class="pixel r">R</div><div class="pixel g">G</div>
+            <div class="pixel g">G</div><div class="pixel b">B</div><div class="pixel g">G</div><div class="pixel b">B</div>
+          </div>
+          <p>이 상태로 보면 컬러가 아니라 raw 패턴처럼 보입니다.</p>
+        </div>
+        <div class="card">
+          <h3>Debayer 결과</h3>
+          <p>Debayer는 주변 픽셀을 참고해서 각 픽셀의 빠진 R/G/B 값을 계산합니다. 그 결과 일반적인 RGB 컬러 이미지가 됩니다.</p>
+          <ul>
+            <li>CXP: <code>SapColorConversion</code></li>
+            <li>GigE: <code>IMV_PixelConvert</code></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="note warn">
+        Bayer 옵션은 카메라가 Bayer raw를 출력할 때만 켭니다. Mono 카메라에서 켜면 색 변환이 지원되지 않거나 원치 않는 표시가 될 수 있습니다.
+      </div>
+    </section>
+
+    <section id="files">
+      <h2>8. 코드를 고칠 때 어디를 보면 되나요?</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>하고 싶은 일</th>
+            <th>CXP 파일</th>
+            <th>GigE 파일</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>버튼 추가/위치 변경</td>
+            <td><code>Resource.h</code>, <code>iRaypleCxpGrabber.rc</code></td>
+            <td><code>Resource.h</code>, <code>iRaypleGigEGrabber.rc</code></td>
+          </tr>
+          <tr>
+            <td>버튼 클릭 함수 연결</td>
+            <td><code>iRaypleCxpGrabberDlg.cpp</code>의 <code>BEGIN_MESSAGE_MAP</code></td>
+            <td><code>iRaypleGigEGrabberDlg.cpp</code>의 <code>BEGIN_MESSAGE_MAP</code></td>
+          </tr>
+          <tr>
+            <td>Connect 동작 수정</td>
+            <td><code>OnBnClickedConnect()</code>, <code>CreateSaperaObjects()</code></td>
+            <td><code>OnBnClickedConnect()</code>, <code>ConnectCamera()</code></td>
+          </tr>
+          <tr>
+            <td>영상 표시 수정</td>
+            <td><code>XferCallback()</code>, <code>ProCallback()</code></td>
+            <td><code>ConvertFrameToBgr()</code>, <code>DrawCurrentImage()</code></td>
+          </tr>
+          <tr>
+            <td>노출/트리거 feature 수정</td>
+            <td><code>SetExposureTime()</code>, <code>ConfigureCameraSoftwareTrigger()</code></td>
+            <td><code>SetExposureTime()</code>, <code>ConfigureSoftwareTrigger()</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="note ok">
+        발표용 한 줄 요약: "MFC는 버튼과 화면을 담당하고, SDK가 카메라 연결/취득/변환을 담당하며, 프레임이 들어올 때마다 callback 또는 worker thread가 화면 갱신을 요청합니다."
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap">
+    iRaypleVision 설명 문서. 이 파일은 브라우저에서 바로 열 수 있는 단일 HTML입니다.
+  </footer>
+</body>
+</html>
