@@ -1,0 +1,39 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build output
+x64/
+x86/
+Debug/
+Release/
+bin/
+obj/
+ipch/
+*.tlog
+*.lastbuildstate
+*.ilk
+*.pdb
+*.idb
+*.obj
+*.res
+*.pch
+*.log
+
+# Generated/editor files
+*.aps
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+
+# Runtime SDK binaries copied after build
+*.dll
+*.exe
+
+# OS files
+Thumbs.db
+Desktop.ini
