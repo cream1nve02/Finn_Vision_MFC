@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>MFC 메시지 흐름 시뮬레이터 — iRaypleCxpGrabber</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Segoe UI','맑은 고딕',sans-serif;background:#0f0f1a;color:#e0e0e0;line-height:1.7;}
+
+/* ── layout ── */
+.wrap{display:flex;height:100vh;}
+.left{width:400px;min-width:400px;background:#161625;border-right:2px solid #2a2a4a;display:flex;flex-direction:column;overflow-y:auto;}
+.right{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+
+/* ── simulated dialog ── */
+.dlg-title{background:#1e1e3a;padding:10px 16px;font-size:13px;font-weight:700;color:#ff6b9d;border-bottom:1px solid #2a2a4a;}
+.dlg-body{padding:16px;flex:1;}
+
+.cam-view{background:#000;border:2px solid #333;height:130px;display:flex;align-items:center;justify-content:center;color:#555;font-size:12px;margin-bottom:14px;border-radius:4px;position:relative;transition:.3s;}
+.cam-view.on{border-color:#4ecdc4;color:#4ecdc4;}
+.cam-view .tag{position:absolute;top:4px;left:6px;font-size:9px;color:#444;font-family:monospace;}
+
+.row{display:flex;gap:8px;margin-bottom:8px;}
+
+.btn{
+  padding:8px 12px;border:1px solid #2a2a4a;background:#1e1e3a;color:#ccc;
+  cursor:pointer;border-radius:6px;font-size:12px;flex:1;text-align:center;
+  transition:all .15s;position:relative;user-select:none;
+}
+.btn:hover{background:#2a2a4a;border-color:#ff6b9d;}
+.btn.off{opacity:.35;cursor:not-allowed;pointer-events:none;}
+.btn.click-flash{animation:flash .5s;}
+@keyframes flash{0%{box-shadow:0 0 0 0 rgba(255,107,157,.7);}100%{box-shadow:0 0 0 14px rgba(255,107,157,0);}}
+
+.chk-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px;}
+.chk-row input{accent-color:#ff6b9d;}
+.inp-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.inp-row label{font-size:12px;min-width:75px;}
+.inp-row input[type=text]{flex:1;padding:5px 8px;background:#0a0a14;border:1px solid #2a2a4a;color:#ccc;border-radius:4px;font-size:12px;}
+
+.status{background:#0a0a14;border:1px solid #2a2a4a;padding:6px 10px;font-size:11px;color:#888;margin-top:auto;border-radius:4px;}
+
+/* ── right panel ── */
+.tabs{display:flex;background:#0a0a14;border-bottom:2px solid #1e1e3a;}
+.tab{padding:11px 20px;background:transparent;border:none;color:#777;cursor:pointer;font-size:13px;font-weight:600;border-bottom:2px solid transparent;margin-bottom:-2px;transition:.2s;}
+.tab:hover{color:#ccc;}
+.tab.on{color:#ff6b9d;border-bottom-color:#ff6b9d;}
+
+.panel{flex:1;overflow-y:auto;padding:24px 28px;display:none;}
+.panel.on{display:block;}
+
+/* ── concept cards ── */
+.concept{background:#1a1a2e;border:1px solid #2a2a4a;border-radius:10px;padding:20px 24px;margin-bottom:16px;}
+.concept h3{font-size:16px;margin-bottom:10px;}
+.concept p,.concept li{font-size:13px;color:#bbb;}
+.concept ul{padding-left:20px;}
+.concept li{margin-bottom:4px;}
+
+.tri-compare{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:12px 0;}
+.py-compare{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0;}
+.py-box{background:#0a0a14;border-radius:8px;padding:14px;border:1px solid #2a2a4a;}
+.py-box h4{font-size:12px;margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+.py-box.python h4{color:#3572A5;}
+.py-box.ros h4{color:#22b573;}
+.py-box.mfc h4{color:#ff6b9d;}
+.py-box pre{font-size:11px;line-height:1.6;color:#ccc;white-space:pre-wrap;font-family:Consolas,'Courier New',monospace;}
+
+.highlight-box{background:rgba(255,107,157,.08);border:1px solid rgba(255,107,157,.3);border-radius:8px;padding:14px 18px;margin:12px 0;font-size:13px;color:#ddd;}
+.highlight-box strong{color:#ff6b9d;}
+
+/* ── visual flow ── */
+.vflow{display:flex;flex-direction:column;align-items:center;gap:0;margin:16px 0;}
+.vbox{width:100%;max-width:640px;padding:16px 20px;border-radius:10px;position:relative;font-size:13px;}
+.vbox .num{display:inline-flex;width:28px;height:28px;border-radius:50%;align-items:center;justify-content:center;font-weight:800;font-size:13px;margin-right:8px;flex-shrink:0;}
+.vbox .head{display:flex;align-items:center;font-weight:700;font-size:14px;margin-bottom:6px;}
+.vbox .body{padding-left:36px;color:#bbb;font-size:12.5px;}
+.vbox .body code{background:#0a0a14;padding:2px 6px;border-radius:3px;font-family:Consolas,monospace;font-size:11px;color:#f0f0f0;}
+
+.vbox.os{background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.25);}
+.vbox.os .num{background:#ff6b6b;color:#fff;}
+.vbox.mfc{background:rgba(255,217,61,.06);border:1px solid rgba(255,217,61,.2);}
+.vbox.mfc .num{background:#ffd93d;color:#222;}
+.vbox.map{background:rgba(107,203,119,.06);border:1px solid rgba(107,203,119,.2);}
+.vbox.map .num{background:#6bcb77;color:#222;}
+.vbox.handler{background:rgba(77,150,255,.06);border:1px solid rgba(77,150,255,.2);}
+.vbox.handler .num{background:#4d96ff;color:#fff;}
+.vbox.sapera{background:rgba(155,89,182,.06);border:1px solid rgba(155,89,182,.2);}
+.vbox.sapera .num{background:#9b59b6;color:#fff;}
+.vbox.cb{background:rgba(230,126,34,.06);border:1px solid rgba(230,126,34,.2);}
+.vbox.cb .num{background:#e67e22;color:#fff;}
+
+.varrow{color:#444;font-size:22px;line-height:1;padding:2px 0;}
+
+/* ── code block ── */
+.code-block{background:#0a0a14;border:1px solid #2a2a4a;border-radius:8px;padding:14px 16px;font-family:Consolas,monospace;font-size:11.5px;line-height:1.7;overflow-x:auto;white-space:pre;margin:10px 0;color:#ccc;}
+.code-block .kw{color:#569cd6;}
+.code-block .tp{color:#4ec9b0;}
+.code-block .st{color:#ce9178;}
+.code-block .cm{color:#6a9955;}
+.code-block .fn{color:#dcdcaa;}
+.code-block .hl{background:rgba(255,107,157,.15);padding:1px 3px;border-radius:3px;}
+.code-block .num{color:#b5cea8;display:inline;width:auto;height:auto;border-radius:0;margin-right:0;font-weight:normal;background:none;}
+.code-block .macro{color:#c586c0;}
+
+/* ── animated flow for simulation ── */
+.sim-step{opacity:0;transform:translateY(12px);transition:opacity .4s,transform .4s;margin-bottom:0;}
+.sim-step.show{opacity:1;transform:translateY(0);}
+
+.sim-placeholder{text-align:center;padding:80px 20px;color:#555;}
+.sim-placeholder .big{font-size:50px;margin-bottom:12px;}
+.sim-placeholder p{font-size:14px;}
+
+/* ── tooltip ── */
+.tip{position:relative;border-bottom:1px dashed #ff6b9d;color:#ff6b9d;cursor:help;display:inline;}
+.tip .tiptext{
+  visibility:hidden;opacity:0;position:absolute;bottom:130%;left:50%;transform:translateX(-50%);
+  background:#2a2a4a;color:#eee;padding:10px 14px;border-radius:8px;font-size:12px;
+  width:280px;z-index:99;pointer-events:none;transition:opacity .2s;
+  border:1px solid #444;line-height:1.5;font-weight:normal;text-align:left;
+}
+.tip:hover .tiptext{visibility:visible;opacity:1;}
+
+/* ── legend ── */
+.legend{display:flex;gap:14px;padding:10px 20px;background:#0a0a14;border-top:1px solid #1e1e3a;flex-wrap:wrap;}
+.legend-i{display:flex;align-items:center;gap:5px;font-size:11px;color:#999;}
+.legend-d{width:10px;height:10px;border-radius:50%;}
+
+/* speed */
+.topbar{background:#1e1e3a;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #2a2a4a;}
+.topbar h2{font-size:15px;color:#ff6b9d;}
+.speed{display:flex;align-items:center;gap:8px;font-size:12px;color:#888;}
+.speed input{width:90px;accent-color:#ff6b9d;}
+.clr-btn{padding:5px 14px;border:1px solid #ff6b9d;background:transparent;color:#ff6b9d;cursor:pointer;border-radius:4px;font-size:11px;}
+.clr-btn:hover{background:#ff6b9d;color:#fff;}
+
+::-webkit-scrollbar{width:6px;}
+::-webkit-scrollbar-track{background:#0a0a14;}
+::-webkit-scrollbar-thumb{background:#2a2a4a;border-radius:3px;}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<!-- ===== LEFT: Fake Dialog ===== -->
+<div class="left">
+  <div class="dlg-title">iRayple CXP Grabber (시뮬레이션 다이얼로그)</div>
+  <div class="dlg-body">
+    <div class="cam-view" id="camView">
+      <span class="tag">카메라 영상 표시 영역</span>
+      <span id="camText">연결 안 됨</span>
+    </div>
+    <div class="row"><div class="btn" id="bConnect" onclick="sim('connect')">Connect</div></div>
+    <div class="row">
+      <div class="btn off" id="bStart" onclick="sim('start')">Start Grab</div>
+      <div class="btn off" id="bStop" onclick="sim('stop')">Stop</div>
+    </div>
+    <div class="row"><div class="btn off" id="bSnap" onclick="sim('snap')">Snap</div></div>
+    <div class="chk-row"><input type="checkbox" id="cTrig" disabled onclick="sim('trigger')"><label for="cTrig">Software trigger mode</label></div>
+    <div class="row"><div class="btn off" id="bSwTrig" onclick="sim('swtrigger')">Software Trigger</div></div>
+    <div class="chk-row"><input type="checkbox" id="cBayer" onclick="sim('bayer')"><label for="cBayer">Bayer CPU Debayer</label></div>
+    <div class="inp-row">
+      <label>Exposure (us)</label>
+      <input type="text" id="eExp" value="10000" disabled>
+      <div class="btn off" id="bExp" onclick="sim('exposure')" style="flex:0;padding:8px 14px;">Set</div>
+    </div>
+    <div class="status" id="sBar">연결 안 됨</div>
+  </div>
+</div>
+
+<!-- ===== RIGHT: Explanation ===== -->
+<div class="right">
+  <div class="topbar">
+    <h2>MFC 메시지 흐름 시뮬레이터</h2>
+    <div style="display:flex;gap:12px;align-items:center;">
+      <div class="speed"><span>애니메이션:</span><input type="range" id="spd" min="1" max="10" value="5"><span id="spdL">보통</span></div>
+      <button class="clr-btn" onclick="clearSim()">초기화</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab on" onclick="openTab('t1')">MFC가 뭔데?</button>
+    <button class="tab" onclick="openTab('t2')">앱이 켜지는 과정</button>
+    <button class="tab" onclick="openTab('t3')">버튼 클릭 시뮬레이션</button>
+  </div>
+
+  <!-- ━━━ TAB 1: MFC 개념 ━━━ -->
+  <div class="panel on" id="t1">
+
+    <div class="concept">
+      <h3 style="color:#ff6b6b;">MFC란? — 한 줄 요약</h3>
+      <p><strong style="color:#ff6b9d;">Windows GUI 프로그램을 C++로 만들기 위한 클래스 라이브러리</strong>입니다.</p>
+      <p style="margin-top:8px;">Python으로 GUI를 만들 때 <code>tkinter</code>를 쓰고, 로봇 시스템에 <code>ROS</code>를 쓰죠? MFC는 Windows GUI에서 그 역할을 합니다.</p>
+      <div class="highlight-box">
+        <strong>핵심 공통점:</strong> MFC, ROS, tkinter 셋 다 <strong>"이벤트/메시지가 오면 등록된 콜백을 실행"</strong>하는 구조입니다.<br>
+        이 구조만 이해하면 MFC의 90%는 끝!
+      </div>
+      <div class="tri-compare">
+        <div class="py-box python">
+          <h4><svg width="14" height="14" viewBox="0 0 24 24" fill="#3572A5"><circle cx="12" cy="12" r="10"/></svg> Python (tkinter)</h4>
+          <pre>import tkinter as tk
+
+root = tk.Tk()
+root.title("내 앱")
+
+btn = tk.Button(root,
+    text="클릭",
+    command=on_click)
+btn.pack()
+
+root.mainloop()  # 이벤트 루프</pre>
+        </div>
+        <div class="py-box ros">
+          <h4><svg width="14" height="14" viewBox="0 0 24 24" fill="#22b573"><circle cx="12" cy="12" r="10"/></svg> ROS (rospy)</h4>
+          <pre>import rospy
+from std_msgs.msg import String
+
+def callback(msg):
+    print(msg.data)
+
+rospy.init_node('my_node')
+
+rospy.Subscriber(
+    '/topic',
+    String,
+    callback)
+
+rospy.spin()  # 이벤트 루프</pre>
+        </div>
+        <div class="py-box mfc">
+          <h4><svg width="14" height="14" viewBox="0 0 24 24" fill="#ff6b9d"><rect width="24" height="24" rx="4"/></svg> C++ (MFC)</h4>
+          <pre>// App 클래스
+class MyApp : public CWinApp {
+  BOOL InitInstance() {
+    MyDlg dlg;
+    dlg.DoModal();
+    // ↑ 이벤트 루프 시작
+  }
+};
+
+// 전역 객체 (자동 시작)
+// = rospy.init_node()
+MyApp theApp;</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="concept">
+      <h3 style="color:#ffd93d;">핵심 개념 1: 메시지 루프 (Message Loop)</h3>
+      <p>Windows 프로그램은 <strong>"무한 루프를 돌면서 이벤트를 기다리는"</strong> 구조입니다.</p>
+      <div class="highlight-box">
+        ROS의 <code>rospy.spin()</code>, tkinter의 <code>root.mainloop()</code>과 <strong>완전히 같은 원리</strong>입니다.<br>
+        "메시지가 왔나? 이벤트가 발생했나?" 를 계속 체크하는 무한 루프.
+      </div>
+      <div class="tri-compare">
+        <div class="py-box python">
+          <h4><svg width="14" height="14" viewBox="0 0 24 24" fill="#3572A5"><circle cx="12" cy="12" r="10"/></svg> Python (tkinter)</h4>
+          <pre># tkinter 내부에서 이런 일이 벌어짐
+while True:
+    event = wait_for_event()
+    if event.type == "button_click":
+        call_handler(event)
+    elif event.type == "close":
+        break</pre>
+        </div>
+        <div class="py-box ros">
+          <h4><svg width="14" height="14" viewBox="0 0 24 24" fill="#22b573"><circle cx="12" cy="12" r="10"/></svg> ROS (rospy.spin)</h4>
+          <pre># rospy.spin() 내부에서 이런 일이 벌어짐
+while not rospy.is_shutdown():
+    msg = wait_for_message()
+    if msg.topic == "/cmd_vel":
+        vel_callback(msg)
+    elif msg.topic == "/image":
+        image_callback(msg)</pre>
+        </div>
+        <div class="py-box mfc">
+          <h4><svg width="14" height="14" viewBox="0 0 24 24" fill="#ff6b9d"><rect width="24" height="24" rx="4"/></svg> MFC (DoModal 내부)</h4>
+          <pre>// MFC가 내부적으로 돌리는 루프
+MSG msg;
+while (GetMessage(&msg, NULL, 0, 0))
+{
+    TranslateMessage(&msg);
+    DispatchMessage(&msg);
+    // → 해당 창의 핸들러 호출
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="concept">
+      <h3 style="color:#6bcb77;">핵심 개념 2: 메시지 맵 (Message Map)</h3>
+      <p><strong>"이 이벤트가 오면 이 함수를 실행해라"</strong> 는 연결표(라우팅 테이블)입니다.</p>
+      <div class="highlight-box">
+        ROS에서 <code>rospy.Subscriber('/topic', MsgType, callback)</code>으로 토픽-콜백을 등록하죠?<br>
+        MFC에서는 <strong>ON_BN_CLICKED(버튼ID, 함수)</strong>로 버튼-핸들러를 등록합니다. <strong>완전히 같은 패턴!</strong>
+      </div>
+      <div class="tri-compare">
+        <div class="py-box python">
+          <h4><svg width="14" height="14" viewBox="0 0 24 24" fill="#3572A5"><circle cx="12" cy="12" r="10"/></svg> Python 딕셔너리</h4>
+          <pre># 이벤트 → 함수 매핑
+handlers = {
+    "btn_connect": on_connect,
+    "btn_start":   on_start,
+    "btn_stop":    on_stop,
+}
+
+# 이벤트 발생 시
+func = handlers[event.source]
+func()</pre>
+        </div>
+        <div class="py-box ros">
+          <h4><svg width="14" height="14" viewBox="0 0 24 24" fill="#22b573"><circle cx="12" cy="12" r="10"/></svg> ROS Subscriber</h4>
+          <pre># 토픽 → 콜백 매핑
+rospy.Subscriber(
+    '/connect_cmd', Bool,
+    on_connect)
+rospy.Subscriber(
+    '/start_cmd', Bool,
+    on_start)
+rospy.Subscriber(
+    '/stop_cmd', Bool,
+    on_stop)</pre>
+        </div>
+        <div class="py-box mfc">
+          <h4><svg width="14" height="14" viewBox="0 0 24 24" fill="#ff6b9d"><rect width="24" height="24" rx="4"/></svg> MFC 메시지 맵</h4>
+          <pre>// 버튼ID → 핸들러 매핑
+BEGIN_MESSAGE_MAP(Dlg, CDialogEx)
+  ON_BN_CLICKED(
+    IDC_BTN_CONNECT,
+    &Dlg::OnBnClickedConnect)
+  ON_BN_CLICKED(
+    IDC_BTN_START,
+    &Dlg::OnBnClickedStart)
+  ON_BN_CLICKED(
+    IDC_BTN_STOP,
+    &Dlg::OnBnClickedStop)
+END_MESSAGE_MAP()</pre>
+        </div>
+      </div>
+      <div class="highlight-box">
+        <strong>정리하면:</strong><br>
+        ROS: <code>Subscriber(<strong>토픽</strong>, 메시지타입, <strong>콜백</strong>)</code> — "이 토픽에 메시지 오면 이 함수 실행"<br>
+        MFC: <code>ON_BN_CLICKED(<strong>버튼ID</strong>, <strong>핸들러</strong>)</code> — "이 버튼이 클릭되면 이 함수 실행"<br><br>
+        <strong>BN</strong> = Button Notification, <strong>IDC</strong> = ID of Control (버튼 고유 번호, resource.h에 #define)
+      </div>
+    </div>
+
+    <div class="concept">
+      <h3 style="color:#4d96ff;">핵심 개념 3: 다이얼로그 기반 앱</h3>
+      <p>이 프로그램은 <strong>"다이얼로그(대화상자) 하나가 곧 메인 화면"</strong>인 구조입니다.</p>
+      <div class="highlight-box">
+        ROS로 치면 <strong>노드 하나에 subscriber/publisher 다 때려넣은 구조</strong>입니다.<br>
+        Python으로 치면 <code>root = tk.Tk()</code> 하나에 버튼 다 붙인 구조. <strong>창 하나 = 프로그램 전체.</strong>
+      </div>
+      <p style="margin-top:10px;">이 앱의 구조를 Python과 ROS 노드로 각각 번역하면:</p>
+      <div class="py-compare">
+        <div class="py-box ros">
+          <h4><svg width="14" height="14" viewBox="0 0 24 24" fill="#22b573"><circle cx="12" cy="12" r="10"/></svg> ROS 노드로 번역하면 이런 느낌</h4>
+          <pre>#!/usr/bin/env python
+import rospy
+from sensor_msgs.msg import Image
+
+class GrabberNode:               # = CiRaypleCxpGrabberDlg
+    def __init__(self):
+        rospy.init_node('grabber')  # = theApp + InitInstance()
+        self.camera = None          # = m_acq
+        self.image_pub = rospy.Publisher(  # = m_view
+            '/camera/image', Image, queue_size=1)
+
+        # 메시지 맵과 같은 역할! 토픽 → 콜백 등록
+        rospy.Subscriber('/cmd/connect', Bool,
+            self.on_connect)          # = ON_BN_CLICKED(IDC_BTN_CONNECT, ...)
+        rospy.Subscriber('/cmd/start', Bool,
+            self.on_start)            # = ON_BN_CLICKED(IDC_BTN_START, ...)
+
+    def on_connect(self, msg):        # = OnBnClickedConnect()
+        self.camera = Camera(...)
+
+    def on_start(self, msg):          # = OnBnClickedStart()
+        self.camera.start_grab()
+
+    def image_callback(self, image):  # = XferCallback (프레임 도착 콜백)
+        self.image_pub.publish(image) # = m_view->Show()
+
+if __name__ == '__main__':
+    node = GrabberNode()
+    rospy.spin()                      # = DoModal() 메시지 루프</pre>
+        </div>
+        <div class="py-box python">
+          <h4><svg width="14" height="14" viewBox="0 0 24 24" fill="#3572A5"><circle cx="12" cy="12" r="10"/></svg> Python tkinter로 번역하면</h4>
+          <pre>class MyApp:              # = CiRaypleCxpGrabberApp
+    """프로그램 자체"""
+    def run(self):
+        dlg = GrabberDialog()
+        dlg.show_modal()  # = DoModal()
+
+class GrabberDialog:      # = CiRaypleCxpGrabberDlg
+    """메인 화면"""
+    def __init__(self):
+        self.camera = None    # = m_acq
+        self.buffer = None    # = m_buffers
+        self.transfer = None  # = m_xfer
+        self.view = None      # = m_view
+
+    def on_connect(self):     # Connect 클릭 시
+        self.camera = Camera(...)
+        self.transfer = Transfer(
+            callback=self.on_frame)
+
+    def on_start(self):       # Start 클릭 시
+        self.transfer.grab()
+
+    def on_frame(self, image):  # 프레임 도착 콜백
+        self.view.show(image)
+
+app = MyApp()   # = theApp
+app.run()</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="concept">
+      <h3 style="color:#9b59b6;">핵심 개념 4: 리소스 파일 (.rc)</h3>
+      <p><strong>버튼 위치, 크기, 텍스트를 코드가 아니라 별도 파일에 정의</strong>합니다.</p>
+      <div class="highlight-box">
+        HTML에서 <code>&lt;button&gt;</code>으로 UI를 정의하고 JS로 로직을 짜는 것처럼,<br>
+        MFC는 <strong>.rc 파일에서 UI 레이아웃</strong>을, <strong>.cpp 파일에서 동작</strong>을 정의합니다.
+      </div>
+      <div class="code-block"><span class="cm">// iRaypleCxpGrabber.rc (리소스 파일) — HTML처럼 UI 레이아웃 정의</span>
+
+IDD_IRAYPLECXPGRABBER_DIALOG   <span class="cm">← 다이얼로그 이름 (= 화면 ID)</span>
+BEGIN
+    <span class="cm">//  종류          ID                 x    y   가로  세로</span>
+    CONTROL      "", IDC_VIEW_WND,    10,  10, 570,  420   <span class="cm">← 카메라 영상 영역</span>
+    PUSHBUTTON   "Connect",  IDC_BTN_CONNECT,  596, 18, 140, 24   <span class="cm">← 버튼</span>
+    PUSHBUTTON   "Start",    IDC_BTN_START,    596, 50,  66, 24
+    PUSHBUTTON   "Stop",     IDC_BTN_STOP,     670, 50,  66, 24
+    EDITTEXT     IDC_EDIT_EXPOSURE,             596,220,  86, 18   <span class="cm">← 입력칸</span>
+END
+
+<span class="cm">// IDC_BTN_CONNECT = 1001 (resource.h에 정의된 숫자)</span>
+<span class="cm">// 이 숫자가 메시지 맵에서 버튼을 식별하는 열쇠!</span></div>
+    </div>
+
+    <div class="concept">
+      <h3 style="color:#e67e22;">용어 사전 (코드에서 자주 보이는 것들)</h3>
+      <table style="width:100%;font-size:12px;border-collapse:collapse;margin-top:8px;">
+        <tr style="background:#1e1e3a;"><td colspan="3" style="padding:8px;color:#888;font-weight:700;font-size:11px;">MFC 용어</td><td style="padding:8px;color:#22b573;font-weight:700;font-size:11px;">ROS 대응</td><td style="padding:8px;color:#3572A5;font-weight:700;font-size:11px;">Python 대응</td></tr>
+        <tr style="border-bottom:1px solid #2a2a4a;"><td style="padding:8px;color:#ff6b9d;font-weight:700;width:170px;" colspan="3">CWinApp + theApp</td><td style="padding:8px;color:#bbb;"><code>rospy.init_node()</code></td><td style="padding:8px;color:#bbb;"><code>if __name__</code></td></tr>
+        <tr style="border-bottom:1px solid #2a2a4a;"><td style="padding:8px;color:#ff6b9d;font-weight:700;" colspan="3">CDialogEx (다이얼로그)</td><td style="padding:8px;color:#bbb;">노드 클래스 전체</td><td style="padding:8px;color:#bbb;"><code>tk.Tk()</code> 메인윈도우</td></tr>
+        <tr style="border-bottom:1px solid #2a2a4a;"><td style="padding:8px;color:#ff6b9d;font-weight:700;" colspan="3">DoModal()</td><td style="padding:8px;color:#bbb;"><code>rospy.spin()</code></td><td style="padding:8px;color:#bbb;"><code>root.mainloop()</code></td></tr>
+        <tr style="border-bottom:1px solid #2a2a4a;"><td style="padding:8px;color:#ff6b9d;font-weight:700;" colspan="3">WM_COMMAND</td><td style="padding:8px;color:#bbb;">토픽에 도착한 메시지</td><td style="padding:8px;color:#bbb;">이벤트 객체</td></tr>
+        <tr style="border-bottom:1px solid #2a2a4a;"><td style="padding:8px;color:#ff6b9d;font-weight:700;" colspan="3">ON_BN_CLICKED(ID, 함수)</td><td style="padding:8px;color:#bbb;"><code>Subscriber(topic, cb)</code></td><td style="padding:8px;color:#bbb;"><code>command=fn</code></td></tr>
+        <tr style="border-bottom:1px solid #2a2a4a;"><td style="padding:8px;color:#ff6b9d;font-weight:700;" colspan="3">IDC_BTN_XXX (버튼 ID)</td><td style="padding:8px;color:#bbb;">토픽 이름 <code>/cmd/xxx</code></td><td style="padding:8px;color:#bbb;">위젯 변수명</td></tr>
+        <tr style="border-bottom:1px solid #2a2a4a;"><td style="padding:8px;color:#ff6b9d;font-weight:700;" colspan="3">afx_msg void OnXxx()</td><td style="padding:8px;color:#bbb;"><code>def callback(msg):</code></td><td style="padding:8px;color:#bbb;"><code>def on_click():</code></td></tr>
+        <tr style="border-bottom:1px solid #2a2a4a;"><td style="padding:8px;color:#ff6b9d;font-weight:700;" colspan="3">XferCallback (콜백)</td><td style="padding:8px;color:#bbb;">image_raw 콜백</td><td style="padding:8px;color:#bbb;">스레드 콜백</td></tr>
+        <tr style="border-bottom:1px solid #2a2a4a;"><td style="padding:8px;color:#ff6b9d;font-weight:700;" colspan="3">GetDlgItem(ID)</td><td style="padding:8px;color:#bbb;"><code>rospy.get_param()</code></td><td style="padding:8px;color:#bbb;"><code>$("#id")</code></td></tr>
+        <tr><td style="padding:8px;color:#ff6b9d;font-weight:700;" colspan="3">DDX_Control</td><td style="padding:8px;color:#bbb;">launch 파일의 remap</td><td style="padding:8px;color:#bbb;"><code>v-model</code> 바인딩</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- ━━━ TAB 2: 앱 시작 과정 ━━━ -->
+  <div class="panel" id="t2">
+
+    <div class="concept">
+      <h3 style="color:#ff6b9d;">프로그램이 켜질 때 무슨 일이 벌어지나?</h3>
+      <p>.exe를 더블클릭하면 아래 순서로 실행됩니다. 각 단계를 쉽게 풀어볼게요.</p>
+    </div>
+
+    <div class="vflow">
+
+      <div class="vbox os">
+        <div class="head"><span class="num">1</span> Windows가 .exe 파일을 메모리에 로드</div>
+        <div class="body">
+          더블클릭하면 Windows가 프로그램을 메모리에 올리고, C++ 런타임을 시작합니다.<br>
+          이때 <strong>전역 변수</strong>들이 먼저 생성됩니다.
+        </div>
+      </div>
+      <div class="varrow">&#x25BC;</div>
+
+      <div class="vbox mfc">
+        <div class="head"><span class="num">2</span> 전역 객체 <code>theApp</code> 생성 (자동)</div>
+        <div class="body">
+          C++에서는 전역 변수가 <code>main()</code> 이전에 자동 생성됩니다.<br><br>
+          <strong>ROS 비유:</strong> <code>rospy.init_node('grabber')</code>가 노드를 등록하는 것과 같은 시점.<br>
+          <strong>Python 비유:</strong> 파일 맨 위에 <code>app = MyApp()</code> 써놓으면 import 시점에 바로 만들어지는 것과 비슷.
+          <div class="code-block"><span class="cm">// iRaypleCxpGrabber.cpp 36번째 줄</span>
+<span class="tp">CiRaypleCxpGrabberApp</span> <span class="hl">theApp</span>;   <span class="cm">// 이 한 줄이 프로그램의 시작점!</span>
+
+<span class="cm">// main() 함수가 보이지 않는 이유:</span>
+<span class="cm">// MFC가 WinMain()을 대신 제공하고,</span>
+<span class="cm">// 그 안에서 theApp의 InitInstance()를 호출합니다.</span></div>
+        </div>
+      </div>
+      <div class="varrow">&#x25BC;</div>
+
+      <div class="vbox mfc">
+        <div class="head"><span class="num">3</span> MFC가 <code>theApp.InitInstance()</code> 호출</div>
+        <div class="body">
+          MFC 프레임워크가 숨겨진 <code>WinMain()</code> 안에서 <code>theApp.InitInstance()</code>를 호출합니다.<br>
+          <strong>이게 사실상 main() 함수</strong>입니다.
+          <div class="code-block"><span class="cm">// iRaypleCxpGrabber.cpp 41번째 줄</span>
+<span class="kw">BOOL</span> <span class="tp">CiRaypleCxpGrabberApp</span>::<span class="fn">InitInstance</span>()
+{
+    <span class="cm">// 1) Windows 공용 컨트롤 초기화 (버튼, 체크박스 등 쓰려면 필요)</span>
+    <span class="fn">InitCommonControlsEx</span>(&InitCtrls);
+
+    <span class="cm">// 2) 메인 다이얼로그(화면) 만들기</span>
+    <span class="tp">CiRaypleCxpGrabberDlg</span> <span class="hl">dlg</span>;       <span class="cm">// 메인 화면 객체 생성</span>
+    m_pMainWnd = &dlg;                <span class="cm">// "이게 메인 화면이야" 등록</span>
+
+    <span class="cm">// 3) 화면 띄우기 — 여기서 멈춤! 창이 닫힐 때까지 안 넘어감</span>
+    INT_PTR nResponse = dlg.<span class="hl"><span class="fn">DoModal</span>()</span>;
+
+    <span class="kw">return</span> FALSE;  <span class="cm">// 창 닫히면 프로그램 종료</span>
+}</div>
+        </div>
+      </div>
+      <div class="varrow">&#x25BC;</div>
+
+      <div class="vbox handler">
+        <div class="head"><span class="num">4</span> <code>DoModal()</code> 내부에서 <code>OnInitDialog()</code> 호출</div>
+        <div class="body">
+          <code>DoModal()</code>이 창을 만들면서 <code>OnInitDialog()</code>를 자동으로 호출합니다.<br>
+          <strong>ROS 비유:</strong> <code>__init__</code>에서 subscriber/publisher 등록하고 파라미터 세팅하는 것과 같습니다.<br>
+          <strong>Python 비유:</strong> <code>__init__</code> 에서 위젯 초기 설정 하는 것과 같습니다.
+          <div class="code-block"><span class="cm">// iRaypleCxpGrabberDlg.cpp 117번째 줄</span>
+<span class="kw">BOOL</span> <span class="tp">CiRaypleCxpGrabberDlg</span>::<span class="fn">OnInitDialog</span>()
+{
+    <span class="tp">CDialogEx</span>::<span class="fn">OnInitDialog</span>();   <span class="cm">// 부모 클래스 초기화 (super().__init__())</span>
+
+    <span class="fn">SetIcon</span>(m_hIcon, TRUE);        <span class="cm">// 아이콘 설정</span>
+    <span class="fn">SetDlgItemText</span>(IDC_EDIT_EXPOSURE, <span class="st">_T("10000")</span>);  <span class="cm">// 기본값 세팅</span>
+    <span class="fn">CheckDlgButton</span>(IDC_CHECK_BAYER, BST_UNCHECKED); <span class="cm">// 체크박스 해제</span>
+
+    <span class="hl"><span class="fn">UpdateUiState</span>();</span>  <span class="cm">// 버튼 활성/비활성 설정</span>
+    <span class="kw">return</span> TRUE;
+}</div>
+        </div>
+      </div>
+      <div class="varrow">&#x25BC;</div>
+
+      <div class="vbox mfc">
+        <div class="head"><span class="num">5</span> 메시지 루프 시작 — 사용자 입력 대기</div>
+        <div class="body">
+          <code>DoModal()</code> 안에서 무한 루프가 시작됩니다.<br>
+          이제부터 사용자가 버튼을 클릭하면 이벤트가 처리됩니다.<br><br>
+          <strong style="color:#ff6b9d;">왼쪽 다이얼로그의 버튼을 클릭해보세요! &rarr;</strong> "버튼 클릭 시뮬레이션" 탭에서 흐름을 볼 수 있습니다.
+          <div class="code-block"><span class="cm">// 이 루프가 DoModal() 안에서 계속 돌고 있음 (직접 안 짜도 MFC가 자동으로)</span>
+
+<span class="kw">while</span> (<span class="fn">GetMessage</span>(&msg, NULL, 0, 0))   <span class="cm">// "메시지 있어?" 확인</span>
+{
+    <span class="fn">TranslateMessage</span>(&msg);              <span class="cm">// 키보드 메시지 변환</span>
+    <span class="fn">DispatchMessage</span>(&msg);               <span class="cm">// → 해당 창의 처리함수로 보내기</span>
+}
+
+<span class="cm">// ROS로 치면:    rospy.spin()    ← 토픽 메시지 올 때까지 대기하는 루프</span>
+<span class="cm">// Python으로 치면: root.mainloop() ← tkinter가 내부적으로 이런 루프를 돌리는 것</span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ━━━ TAB 3: 시뮬레이션 ━━━ -->
+  <div class="panel" id="t3">
+    <div id="simSteps"></div>
+    <div class="sim-placeholder" id="simPH">
+      <div class="big">&#x1F448;</div>
+      <p><strong>왼쪽 다이얼로그의 버튼을 아무거나 클릭해보세요!</strong></p>
+      <p style="margin-top:6px;color:#666;font-size:12px;">클릭한 순간부터 코드가 실행되는 전체 과정을<br>단계별 애니메이션으로 보여드립니다.</p>
+      <p style="margin-top:16px;color:#555;font-size:11px;">
+        추천 순서: Connect → Start Grab → Stop 순으로 클릭해보세요
+      </p>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-i"><div class="legend-d" style="background:#ff6b6b"></div>Windows OS</div>
+    <div class="legend-i"><div class="legend-d" style="background:#ffd93d"></div>MFC 프레임워크</div>
+    <div class="legend-i"><div class="legend-d" style="background:#6bcb77"></div>메시지 맵</div>
+    <div class="legend-i"><div class="legend-d" style="background:#4d96ff"></div>핸들러 함수</div>
+    <div class="legend-i"><div class="legend-d" style="background:#9b59b6"></div>Sapera SDK (카메라)</div>
+    <div class="legend-i"><div class="legend-d" style="background:#e67e22"></div>콜백 (비동기)</div>
+  </div>
+</div>
+
+</div>
+
+<script>
+/* ── state ── */
+let S={connected:false,grabbing:false,busy:false};
+
+/* ── tabs ── */
+function openTab(id){
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('on',['t1','t2','t3'][i]===id));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('on',p.id===id));
+}
+
+/* ── speed ── */
+function spd(){
+  let v=+document.getElementById('spd').value;
+  let m={1:'느리게',3:'느리게',5:'보통',7:'빠르게',10:'매우 빠르게'};
+  let k=Object.keys(m).reduce((a,b)=>Math.abs(b-v)<Math.abs(a-v)?b:a);
+  document.getElementById('spdL').textContent=m[k];
+  return Math.max(80,700-(v-1)*70);
+}
+document.getElementById('spd').addEventListener('input',spd);
+
+/* ── UI sync ── */
+function syncUI(){
+  let c=S.connected,g=S.grabbing;
+  document.getElementById('bConnect').textContent=c?'Disconnect':'Connect';
+  tog('bStart',c&&!g);tog('bStop',g);tog('bSnap',c&&!g);
+  document.getElementById('cTrig').disabled=!(c&&!g);
+  tog('bSwTrig',c);
+  document.getElementById('cBayer').disabled=c;
+  document.getElementById('eExp').disabled=!c;
+  tog('bExp',c);
+  let cv=document.getElementById('camView');
+  cv.classList.toggle('on',c);
+  document.getElementById('camText').textContent=g?'촬영 중...':c?'연결됨':'연결 안 됨';
+}
+function tog(id,on){document.getElementById(id).classList.toggle('off',!on);}
+function stat(t){document.getElementById('sBar').textContent=t;}
+
+/* ── clear ── */
+function clearSim(){
+  document.getElementById('simSteps').innerHTML='';
+  document.getElementById('simPH').style.display='';
+}
+
+/* ── sim entry ── */
+async function sim(act){
+  if(S.busy)return;
+  let b=document.getElementById({connect:'bConnect',start:'bStart',stop:'bStop',snap:'bSnap',swtrigger:'bSwTrig',trigger:'cTrig',bayer:'cBayer',exposure:'bExp'}[act]);
+  if(b&&b.classList.contains('off'))return;
+
+  openTab('t3');
+  S.busy=true;
+
+  if(b){b.classList.add('click-flash');setTimeout(()=>b.classList.remove('click-flash'),500);}
+
+  document.getElementById('simSteps').innerHTML='';
+  document.getElementById('simPH').style.display='none';
+
+  let steps=makeSteps(act);
+  for(let i=0;i<steps.length;i++){
+    await addStep(steps[i],i);
+    await sleep(spd());
+  }
+
+  // state change
+  if(act==='connect'){S.connected=!S.connected;if(!S.connected)S.grabbing=false;stat(S.connected?'연결됨: Xtium2-CXP / resource 0':'연결 해제됨');}
+  else if(act==='start'){S.grabbing=true;stat('촬영 중');}
+  else if(act==='stop'){S.grabbing=false;stat('정지');}
+  else if(act==='snap')stat('Snap 완료');
+  else if(act==='swtrigger')stat('소프트웨어 트리거 전송됨');
+  else if(act==='trigger')stat(document.getElementById('cTrig').checked?'트리거 모드 ON':'트리거 모드 OFF');
+  else if(act==='bayer')stat(S.connected?'Bayer 모드 변경은 다음 Connect에 적용':'준비');
+  else if(act==='exposure')stat('노출 시간 설정: '+document.getElementById('eExp').value+' us');
+  syncUI();
+  S.busy=false;
+}
+
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+
+async function addStep(s,i){
+  let c=document.getElementById('simSteps');
+  if(i>0){let a=document.createElement('div');a.style.cssText='text-align:center;padding:2px 0;color:#444;font-size:20px;';a.innerHTML='&#x25BC;';c.appendChild(a);}
+  let d=document.createElement('div');d.className='sim-step';
+  d.innerHTML=`<div class="vbox ${s.cls}">
+    <div class="head"><span class="num">${s.n}</span>${s.title}</div>
+    <div class="body">${s.body}${s.code?'<div class="code-block">'+s.code+'</div>':''}</div>
+  </div>`;
+  c.appendChild(d);
+  await sleep(30);
+  d.classList.add('show');
+  d.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+/* ── step data ── */
+function cid(a){return{connect:'IDC_BTN_CONNECT (1001)',start:'IDC_BTN_START (1002)',stop:'IDC_BTN_STOP (1003)',snap:'IDC_BTN_SNAP (1004)',swtrigger:'IDC_BTN_SW_TRIGGER (1005)',trigger:'IDC_CHECK_TRIGGER (1006)',bayer:'IDC_CHECK_BAYER (1011)',exposure:'IDC_BTN_SET_EXPOSURE (1008)'}[a];}
+function hname(a){return{connect:'OnBnClickedConnect',start:'OnBnClickedStart',stop:'OnBnClickedStop',snap:'OnBnClickedSnap',swtrigger:'OnBnClickedSoftwareTrigger',trigger:'OnBnClickedTriggerMode',bayer:'OnBnClickedBayerMode',exposure:'OnBnClickedSetExposure'}[a];}
+
+function makeSteps(act){
+  let steps=[
+    {n:'1',cls:'os',title:'마우스 클릭! (하드웨어 → Windows)',
+     body:`당신이 마우스를 클릭하면:<br>
+     <strong>마우스 하드웨어</strong> → <strong>드라이버</strong> → <strong>Windows OS</strong> 순서로 전달됩니다.<br>
+     Windows는 클릭 좌표를 보고 "어떤 버튼 위에서 클릭했는지" 알아냅니다.`,
+     code:`<span class="cm">// Windows 내부에서 벌어지는 일 (우리가 짜는 코드 아님!)</span>
+<span class="cm">// 1. 마우스 드라이버: "왼쪽 버튼 눌림, 좌표 (612, 25)"</span>
+<span class="cm">// 2. Windows: "이 좌표는... Connect 버튼 위네!"</span>
+<span class="cm">// 3. 버튼한테 WM_LBUTTONDOWN 메시지 보냄</span>`},
+
+    {n:'2',cls:'os',title:'버튼이 "나 클릭됐어!" 메시지를 부모 창에 보냄',
+     body:`Windows의 버튼 컨트롤은 클릭되면 자동으로 <strong>부모 창(다이얼로그)에게 알림</strong>을 보냅니다.<br>
+     이 알림이 바로 <code>WM_COMMAND</code> 메시지입니다.<br><br>
+     <strong>ROS 비유:</strong> 누군가 <code>/cmd/connect</code> 토픽에 메시지를 publish하는 것과 같습니다.<br>
+     <strong>Python 비유:</strong> tkinter에서 버튼의 <code>command</code> 콜백이 발동하는 것과 같은 시점.`,
+     code:`<span class="cm">// 버튼 컨트롤이 자동으로 하는 일 (우리가 짜는 코드 아님!)</span>
+<span class="fn">SendMessage</span>(
+    부모_다이얼로그,          <span class="cm">// 받는 사람: 우리 다이얼로그</span>
+    <span class="macro">WM_COMMAND</span>,             <span class="cm">// 메시지 종류: "명령이 있어요"</span>
+    MAKEWPARAM(
+        <span class="hl">${cid(act)}</span>,  <span class="cm">// 어떤 버튼? (고유 ID)</span>
+        <span class="macro">BN_CLICKED</span>              <span class="cm">// 무슨 일? "클릭됐어요"</span>
+    ),
+    버튼_핸들                  <span class="cm">// 보낸 사람: 버튼 자신</span>
+);`},
+
+    {n:'3',cls:'mfc',title:'MFC 프레임워크가 메시지를 받아서 처리 시작',
+     body:`메시지 루프에서 돌고 있던 MFC가 이 <code>WM_COMMAND</code>를 받습니다.<br>
+     MFC는 여러 내부 함수를 거쳐서 <strong>"메시지 맵"을 뒤지기 시작</strong>합니다.<br><br>
+     <strong>ROS 비유:</strong> <code>rospy.spin()</code>이 토픽 메시지를 감지하고 등록된 subscriber 콜백을 찾는 과정과 동일!<br>
+     <strong>Python 비유:</strong> tkinter의 mainloop()가 이벤트를 감지하고 등록된 핸들러를 찾는 과정.`,
+     code:`<span class="cm">// MFC 내부 호출 체인 (자동으로 실행됨, 우리가 짜는 코드 아님)</span>
+
+<span class="cm">// 1단계: 메시지 루프가 메시지를 꺼냄</span>
+<span class="fn">GetMessage</span>(&msg)     <span class="cm">// "메시지 하나 가져와"</span>
+<span class="fn">DispatchMessage</span>(&msg) <span class="cm">// "해당 창으로 보내"</span>
+
+<span class="cm">// 2단계: 우리 다이얼로그의 처리 함수가 호출됨</span>
+WindowProc(WM_COMMAND, ...)
+  → OnWndMsg(WM_COMMAND, ...)
+    → OnCommand(...)
+      → <span class="hl">메시지 맵 테이블 검색 시작!</span>
+
+<span class="cm">// 이 복잡한 체인은 MFC가 알아서 하는 거라 외울 필요 없음</span>
+<span class="cm">// 중요한 건: "메시지 맵에서 매칭되는 핸들러를 찾는다" 는 것</span>`},
+
+    {n:'4',cls:'map',title:'메시지 맵에서 "이 버튼 → 이 함수" 매칭 발견!',
+     body:`MFC가 우리가 작성한 메시지 맵을 순서대로 읽으면서, <strong>버튼 ID가 일치하는 항목</strong>을 찾습니다.<br><br>
+     <strong>ROS 비유:</strong> <code>Subscriber('/connect_cmd', Bool, on_connect)</code>에서 토픽 이름으로 콜백을 찾는 것!<br>
+     <strong>Python 비유:</strong> <code>handlers = {"btn_connect": on_connect}</code> 딕셔너리에서 키를 찾는 것!`,
+     code:getMapCode(act)}
+  ];
+
+  // handler-specific steps
+  steps.push(...getHandlerSteps(act));
+  return steps;
+}
+
+function getMapCode(act){
+  let fn=hname(act);
+  let lines=[
+    ['IDC_BTN_CONNECT','OnBnClickedConnect'],
+    ['IDC_BTN_START','OnBnClickedStart'],
+    ['IDC_BTN_STOP','OnBnClickedStop'],
+    ['IDC_BTN_SNAP','OnBnClickedSnap'],
+    ['IDC_BTN_SW_TRIGGER','OnBnClickedSoftwareTrigger'],
+    ['IDC_CHECK_TRIGGER','OnBnClickedTriggerMode'],
+    ['IDC_BTN_SET_EXPOSURE','OnBnClickedSetExposure'],
+    ['IDC_CHECK_BAYER','OnBnClickedBayerMode']
+  ];
+  let code=`<span class="cm">// iRaypleCxpGrabberDlg.cpp 98번째 줄</span>
+<span class="cm">// Python의 딕셔너리와 같은 역할을 하는 "메시지 맵"</span>
+
+<span class="macro">BEGIN_MESSAGE_MAP</span>(CiRaypleCxpGrabberDlg, CDialogEx)\n`;
+  for(let [id,f] of lines){
+    let match=f===fn;
+    let line=`    <span class="macro">ON_BN_CLICKED</span>(${id}, &Dlg::${f})`;
+    if(match) line=`    <span class="hl"><span class="macro">ON_BN_CLICKED</span>(${id}, &Dlg::${f})</span>  <span class="cm">← ★ 여기 매칭!</span>`;
+    code+=line+'\n';
+  }
+  code+=`<span class="macro">END_MESSAGE_MAP</span>()
+
+<span class="cm">// 위 매크로를 Python으로 번역하면:</span>
+<span class="cm">// handlers = {</span>
+<span class="cm">//     (BN_CLICKED, IDC_BTN_CONNECT): self.on_connect,</span>
+<span class="cm">//     (BN_CLICKED, IDC_BTN_START):   self.on_start,</span>
+<span class="cm">//     ...매칭된 항목의 함수 포인터를 통해 호출!</span>
+<span class="cm">// }</span>`;
+  return code;
+}
+
+function getHandlerSteps(act){
+  switch(act){
+    case 'connect':
+      if(S.connected){
+        return [
+          {n:'5',cls:'handler',title:`${hname(act)}() 실행 — 연결 해제 분기`,
+           body:`이미 연결된 상태(<code>m_acq != nullptr</code>)이므로 <strong>Disconnect 분기</strong>로 들어갑니다.<br>
+           Python으로 치면: <code>if self.camera is not None: self.disconnect()</code>`,
+           code:`<span class="cm">// iRaypleCxpGrabberDlg.cpp 231번째 줄</span>
+<span class="kw">void</span> CiRaypleCxpGrabberDlg::<span class="fn">OnBnClickedConnect</span>()
+{
+    <span class="kw">if</span> (m_acq)   <span class="cm">// m_acq가 있다 = 이미 연결됨</span>
+    {
+        <span class="hl"><span class="fn">DeleteSaperaObjects</span>();</span>  <span class="cm">// 모든 카메라 객체 정리</span>
+        <span class="fn">SetStatus</span>(<span class="st">"Disconnected"</span>);
+        <span class="fn">UpdateUiState</span>();       <span class="cm">// 버튼 비활성화</span>
+        <span class="kw">return</span>;
+    }
+}
+
+<span class="cm">// Python 버전:</span>
+<span class="cm">// def on_connect(self):</span>
+<span class="cm">//     if self.camera:</span>
+<span class="cm">//         self.cleanup()</span>
+<span class="cm">//         self.status = "Disconnected"</span>
+<span class="cm">//         self.update_buttons()</span>
+<span class="cm">//         return</span>`},
+          {n:'6',cls:'handler',title:'UpdateUiState() — 버튼 상태 갱신',
+           body:`연결이 끊어졌으니 Start, Stop, Snap 등 <strong>모든 버튼을 비활성화</strong>합니다.<br>
+           Connect 버튼 텍스트는 "Connect"로 되돌립니다.`,
+           code:`<span class="cm">// iRaypleCxpGrabberDlg.cpp 494번째 줄</span>
+<span class="kw">void</span> CiRaypleCxpGrabberDlg::<span class="fn">UpdateUiState</span>()
+{
+    <span class="kw">const</span> BOOL connected = m_acq && *m_acq && m_xfer && *m_xfer;
+    <span class="cm">// connected = FALSE (방금 다 지웠으니까)</span>
+
+    <span class="fn">GetDlgItem</span>(IDC_BTN_START)-><span class="fn">EnableWindow</span>(FALSE);  <span class="cm">// 비활성화</span>
+    <span class="fn">GetDlgItem</span>(IDC_BTN_STOP)-><span class="fn">EnableWindow</span>(FALSE);
+    <span class="cm">// ... 나머지도 전부 FALSE ...</span>
+}
+
+<span class="cm">// Python 버전:</span>
+<span class="cm">// def update_buttons(self):</span>
+<span class="cm">//     connected = self.camera is not None</span>
+<span class="cm">//     self.btn_start["state"] = "normal" if connected else "disabled"</span>`}
+        ];
+      }
+      return [
+        {n:'5',cls:'handler',title:`${hname(act)}() 실행 — 연결 시작 분기`,
+         body:`아직 연결 안 된 상태(<code>m_acq == nullptr</code>)이므로 <strong>Connect 분기</strong>로 들어갑니다.<br>
+         먼저 시스템에서 카메라 보드를 검색합니다.`,
+         code:`<span class="cm">// iRaypleCxpGrabberDlg.cpp 231번째 줄</span>
+<span class="kw">void</span> CiRaypleCxpGrabberDlg::<span class="fn">OnBnClickedConnect</span>()
+{
+    <span class="kw">if</span> (m_acq) { ... }   <span class="cm">// m_acq가 없다 = 아직 연결 안 됨 → 건너뜀</span>
+
+    <span class="cm">// 1단계: 카메라 하드웨어 찾기</span>
+    CStringA serverName;
+    <span class="hl"><span class="fn">FindFirstAcquisitionResource</span>(serverName, resourceIndex);</span>
+
+    <span class="cm">// 2단계: 설정 파일(.ccf) 선택 대화상자</span>
+    <span class="hl">CFileDialog fileDlg(...);</span>  <span class="cm">// "파일 열기" 팝업</span>
+    fileDlg.<span class="fn">DoModal</span>();        <span class="cm">// 사용자가 파일 고를 때까지 대기</span>
+}
+
+<span class="cm">// Python 버전:</span>
+<span class="cm">// server = find_camera_board()</span>
+<span class="cm">// config_file = filedialog.askopenfilename(</span>
+<span class="cm">//     filetypes=[("CCF files", "*.ccf")])</span>`},
+        {n:'6',cls:'sapera',title:'Sapera 객체 생성 — 카메라 제어 준비',
+         body:`카메라 제어에 필요한 객체들을 <strong>순서대로</strong> 만듭니다.<br>
+         Python으로 치면 카메라 라이브러리의 클래스들을 초기화하는 것입니다.<br><br>
+         <strong>핵심:</strong> <code>XferCallback</code>이라는 콜백 함수를 등록합니다. 이미지가 도착할 때마다 자동 호출!`,
+         code:`<span class="cm">// iRaypleCxpGrabberDlg.cpp 269번째 줄</span>
+<span class="cm">// 객체를 만드는 순서가 중요! (뒤의 것이 앞의 것에 의존)</span>
+
+m_acq     = <span class="kw">new</span> <span class="tp">SapAcquisition</span>(loc, configFile);  <span class="cm">// 프레임그래버 설정</span>
+m_buffers = <span class="kw">new</span> <span class="tp">SapBufferWithTrash</span>(2, m_acq);     <span class="cm">// 이미지 저장 버퍼 2개</span>
+m_xfer    = <span class="kw">new</span> <span class="tp">SapAcqToBuf</span>(m_acq, m_buffers,
+    <span class="hl">XferCallback</span>, <span class="kw">this</span>);                          <span class="cm">// ★ 콜백 등록!</span>
+m_view    = <span class="kw">new</span> <span class="tp">SapView</span>(m_buffers, 화면핸들);      <span class="cm">// 화면에 표시</span>
+
+<span class="fn">CreateSaperaObjects</span>();  <span class="cm">// 실제 하드웨어 리소스 할당</span>
+
+<span class="cm">// ROS 비유: 이건 노드 __init__에서 pub/sub 세팅하는 것과 같음</span>
+<span class="cm">// self.image_sub = Subscriber('/image_raw', Image, self.image_cb)  ← XferCallback</span>
+<span class="cm">// self.image_pub = Publisher('/image_view', Image)                  ← m_view</span>
+<span class="cm">//</span>
+<span class="cm">// Python 비유:</span>
+<span class="cm">// self.camera = Camera(config_file)</span>
+<span class="cm">// self.transfer = Transfer(callback=self.on_frame)  ← 콜백!</span>
+<span class="cm">// self.view = ImageViewer(self.canvas)</span>`},
+        {n:'7',cls:'handler',title:'UpdateUiState() — 버튼 활성화!',
+         body:`연결 성공! 이제 <code>connected = true</code>이므로 Start, Snap 등 <strong>버튼이 활성화</strong>됩니다.`,
+         code:`<span class="cm">// connected = TRUE, grabbing = FALSE</span>
+<span class="fn">GetDlgItem</span>(IDC_BTN_CONNECT)-><span class="fn">SetWindowText</span>(<span class="st">"Disconnect"</span>);
+<span class="fn">GetDlgItem</span>(IDC_BTN_START)-><span class="fn">EnableWindow</span>(TRUE);  <span class="cm">// ★ 활성화!</span>
+<span class="fn">GetDlgItem</span>(IDC_BTN_SNAP)-><span class="fn">EnableWindow</span>(TRUE);   <span class="cm">// ★ 활성화!</span>
+
+<span class="cm">// Python 버전:</span>
+<span class="cm">// self.btn_start["state"] = "normal"</span>
+<span class="cm">// self.btn_snap["state"] = "normal"</span>`}
+      ];
+
+    case 'start':
+      return [
+        {n:'5',cls:'handler',title:`${hname(act)}() 실행 — 연속 촬영 시작`,
+         body:`<code>m_xfer->Grab()</code>을 호출하면 카메라가 <strong>연속으로 이미지를 촬영</strong>하기 시작합니다.<br>
+         <strong>중요:</strong> Grab()은 <strong>즉시 리턴</strong>합니다! 촬영은 백그라운드에서 계속 진행됩니다.`,
+         code:`<span class="cm">// iRaypleCxpGrabberDlg.cpp 302번째 줄</span>
+<span class="kw">void</span> CiRaypleCxpGrabberDlg::<span class="fn">OnBnClickedStart</span>()
+{
+    <span class="kw">if</span> (m_xfer && *m_xfer && <span class="hl">m_xfer-><span class="fn">Grab</span>()</span>)
+        <span class="fn">SetStatus</span>(<span class="st">"Grabbing"</span>);
+    <span class="fn">UpdateUiState</span>();
+}
+
+<span class="cm">// ROS 비유:</span>
+<span class="cm">// camera_driver 노드가 /camera/image_raw 토픽에 publish 시작</span>
+<span class="cm">// → subscriber 콜백이 매 프레임마다 호출되는 것과 같은 원리!</span>
+<span class="cm">// Python 비유:</span>
+<span class="cm">// self.transfer.start_continuous()  # 즉시 리턴, 콜백으로 알림</span>`},
+        {n:'6',cls:'sapera',title:'Sapera SDK가 백그라운드에서 촬영 시작',
+         body:`Grab() 호출 후 Sapera SDK가 <strong>별도 스레드</strong>에서 아래 과정을 반복합니다:<br><br>
+         <strong>카메라 촬영</strong> → <strong>DMA로 버퍼에 복사</strong> → <strong>XferCallback 호출</strong> → 반복<br><br>
+         Python의 <code>threading.Thread</code>로 백그라운드 작업을 하는 것과 비슷합니다.`,
+         code:`<span class="cm">// Sapera가 별도 스레드에서 자동으로 하는 일:</span>
+
+<span class="kw">while</span> (그랩_진행중)   <span class="cm">// Freeze() 호출될 때까지 반복</span>
+{
+    이미지 = 카메라에서_프레임_수신();
+    DMA로_버퍼에_복사(이미지);   <span class="cm">// CPU 안 쓰고 직접 메모리 복사</span>
+    <span class="hl"><span class="fn">XferCallback</span>(정보);</span>     <span class="cm">// ★ 우리가 등록한 콜백 호출!</span>
+}
+
+<span class="cm">// ROS 비유: camera_driver 노드 내부와 완전히 같은 구조!</span>
+<span class="cm">//   while ok(): img = cam.read(); pub.publish(img)</span>
+<span class="cm">//   → subscriber 노드의 콜백이 자동 호출됨</span>
+<span class="cm">// Python 비유:</span>
+<span class="cm">//   while grabbing: frame=cam.read(); callback(frame)</span>`},
+        {n:'7',cls:'cb',title:'XferCallback() — 매 프레임마다 자동 호출!',
+         body:`이 함수는 프레임이 도착할 때마다 <strong>Sapera 스레드에서</strong> 호출됩니다.<br>
+         여기서 <code>m_view->Show()</code>로 화면에 이미지를 표시합니다.<br><br>
+         <strong>핵심:</strong> 이 콜백은 MFC 메시지 루프와는 <strong>별개의 스레드</strong>에서 실행됩니다!`,
+         code:`<span class="cm">// iRaypleCxpGrabberDlg.cpp 689번째 줄</span>
+<span class="cm">// static 함수 = 클래스 인스턴스 없이 호출 가능 (C 스타일 콜백)</span>
+
+<span class="kw">static void</span> <span class="fn">XferCallback</span>(SapXferCallbackInfo* pInfo)
+{
+    <span class="cm">// Context에서 다이얼로그 포인터 꺼내기</span>
+    <span class="cm">// (Connect때 this를 넘겨줬던 것을 여기서 다시 받음)</span>
+    <span class="kw">auto</span>* dlg = static_cast<CiRaypleCxpGrabberDlg*>(
+        pInfo-><span class="fn">GetContext</span>());
+
+    <span class="kw">if</span> (pInfo-><span class="fn">IsTrash</span>())  <span class="cm">// 버퍼 오버플로우 체크</span>
+        <span class="kw">return</span>;
+
+    <span class="hl">dlg->m_view-><span class="fn">Show</span>();</span>  <span class="cm">// ★ 화면에 이미지 표시!</span>
+}
+
+<span class="cm">// ★ ROS 비유: 이것은 image_raw subscriber 콜백과 완전히 같습니다!</span>
+<span class="cm">// def image_callback(self, msg):     ← Subscriber('/camera/image_raw', Image, image_callback)</span>
+<span class="cm">//     cv_image = bridge.imgmsg_to_cv2(msg)</span>
+<span class="cm">//     cv2.imshow("camera", cv_image)  ← m_view->Show()와 동일!</span>
+<span class="cm">//</span>
+<span class="cm">// 차이점: ROS는 별도 노드가 publish, 여기선 Sapera SDK가 DMA로 직접 전달</span>
+<span class="cm">// 공통점: 둘 다 "데이터 도착 → 등록된 콜백 자동 호출 → 화면 표시"</span>`}
+      ];
+
+    case 'stop':
+      return [
+        {n:'5',cls:'handler',title:`${hname(act)}() 실행 — 촬영 중지`,
+         body:`<code>Freeze()</code>는 현재 진행 중인 프레임까지만 완료하고 <strong>촬영을 멈춥니다</strong>.<br>
+         (즉시 끊지 않고, 마지막 프레임은 깔끔하게 마무리)`,
+         code:`<span class="cm">// iRaypleCxpGrabberDlg.cpp 310번째 줄</span>
+<span class="kw">void</span> CiRaypleCxpGrabberDlg::<span class="fn">OnBnClickedStop</span>()
+{
+    <span class="kw">if</span> (m_xfer && *m_xfer)
+    {
+        <span class="hl">m_xfer-><span class="fn">Freeze</span>();</span>  <span class="cm">// 현재 프레임 마무리 후 정지</span>
+        <span class="fn">SetStatus</span>(<span class="st">"Stopped"</span>);
+    }
+    <span class="fn">UpdateUiState</span>();  <span class="cm">// Start 버튼 다시 활성화</span>
+}
+
+<span class="cm">// Python 비유:</span>
+<span class="cm">// def on_stop(self):</span>
+<span class="cm">//     self.grabbing = False  # 백그라운드 스레드가 이걸 보고 멈춤</span>`}
+      ];
+
+    case 'snap':
+      return [
+        {n:'5',cls:'handler',title:`${hname(act)}() 실행 — 1장만 찍기`,
+         body:`<code>Snap()</code>은 <code>Grab()</code>과 비슷하지만 <strong>딱 1프레임만</strong> 촬영합니다.<br>
+         촬영 완료되면 XferCallback이 1번 호출되고 자동으로 멈춥니다.`,
+         code:`<span class="cm">// iRaypleCxpGrabberDlg.cpp 321번째 줄</span>
+<span class="kw">void</span> CiRaypleCxpGrabberDlg::<span class="fn">OnBnClickedSnap</span>()
+{
+    <span class="kw">if</span> (m_xfer && *m_xfer && <span class="hl">m_xfer-><span class="fn">Snap</span>()</span>)
+        <span class="fn">SetStatus</span>(<span class="st">"Snap requested"</span>);
+    <span class="fn">UpdateUiState</span>();
+}
+
+<span class="cm">// Grab() vs Snap() 차이:</span>
+<span class="cm">// Grab()  = 동영상 녹화 (계속 촬영, Stop 누를 때까지)</span>
+<span class="cm">// Snap()  = 사진 한 장 (1프레임만 찍고 자동 정지)</span>`}
+      ];
+
+    case 'swtrigger':
+      return [
+        {n:'5',cls:'handler',title:`${hname(act)}() 실행 — 소프트웨어 트리거`,
+         body:`카메라에 <strong>"지금 찍어!"</strong> 신호를 보내는 것입니다.<br>
+         트리거 모드에서는 카메라가 이 신호를 받을 때만 촬영합니다.<br>
+         (일반 모드에서는 카메라가 알아서 계속 촬영)`,
+         code:`<span class="cm">// iRaypleCxpGrabberDlg.cpp 329번째 줄</span>
+<span class="kw">void</span> CiRaypleCxpGrabberDlg::<span class="fn">OnBnClickedSoftwareTrigger</span>()
+{
+    <span class="kw">if</span> (<span class="fn">SendCameraSoftwareTrigger</span>())
+        <span class="fn">SetStatus</span>(<span class="st">"Software trigger sent"</span>);
+}
+
+<span class="cm">// SendCameraSoftwareTrigger() 내부:</span>
+<span class="cm">// 방법1: 카메라에 직접 명령</span>
+<span class="cm">//   m_acqDevice->SetFeatureValue("TriggerSoftware", 1);</span>
+<span class="cm">// 방법2: Sapera API 사용</span>
+<span class="cm">//   m_acq->SoftwareTrigger(...);</span>
+
+<span class="cm">// Python 비유:</span>
+<span class="cm">// self.camera.send_command("trigger_now")</span>`},
+      ];
+
+    case 'trigger':
+      return [
+        {n:'5',cls:'handler',title:`${hname(act)}() 실행 — 트리거 모드 전환`,
+         body:`체크박스 상태를 읽어서 <strong>카메라의 트리거 모드를 On/Off</strong>합니다.<br>
+         카메라 설정과 Sapera 설정 <strong>둘 다</strong> 변경해야 합니다.`,
+         code:`<span class="cm">// iRaypleCxpGrabberDlg.cpp 340번째 줄</span>
+<span class="kw">void</span> CiRaypleCxpGrabberDlg::<span class="fn">OnBnClickedTriggerMode</span>()
+{
+    <span class="cm">// 체크박스 상태 읽기</span>
+    <span class="kw">const int</span> enable = <span class="fn">IsDlgButtonChecked</span>(IDC_CHECK_TRIGGER);
+
+    <span class="cm">// 카메라 자체 트리거 설정 (GenICam 표준)</span>
+    <span class="fn">ConfigureCameraSoftwareTrigger</span>(enable);
+
+    <span class="cm">// Sapera(프레임그래버) 트리거 설정</span>
+    <span class="fn">ConfigureSaperaSoftwareTrigger</span>(enable);
+}
+
+<span class="cm">// ConfigureCameraSoftwareTrigger 내부에서 하는 일:</span>
+<span class="cm">// 1. TriggerMode를 먼저 Off</span>
+<span class="cm">// 2. TriggerSource를 "Software"로 변경</span>
+<span class="cm">// 3. TriggerMode를 다시 On</span>
+<span class="cm">// → 순서가 중요! (카메라가 변경 중에 오동작 방지)</span>`},
+      ];
+
+    case 'bayer':
+      return [
+        {n:'5',cls:'handler',title:`${hname(act)}() 실행 — Bayer 모드 토글`,
+         body:`Bayer 디모자이킹(색 복원) 플래그만 저장합니다.<br>
+         <strong>실제 적용은 다음 Connect 때!</strong> (이미 연결된 상태에선 바로 안 바뀜)`,
+         code:`<span class="cm">// iRaypleCxpGrabberDlg.cpp 380번째 줄</span>
+<span class="kw">void</span> CiRaypleCxpGrabberDlg::<span class="fn">OnBnClickedBayerMode</span>()
+{
+    <span class="hl">m_bayerEnabled</span> = 체크박스_선택됨;
+    <span class="kw">if</span> (m_acq)  <span class="cm">// 이미 연결 중이면</span>
+        <span class="fn">SetStatus</span>(<span class="st">"다음 Connect에 적용됩니다"</span>);
+}
+
+<span class="cm">// Bayer가 뭔지:</span>
+<span class="cm">// 카메라 센서는 R/G/B 픽셀이 바둑판처럼 배열됨</span>
+<span class="cm">// → 이걸 실제 컬러 이미지로 변환하는 게 "디모자이킹"</span>
+<span class="cm">// → CPU에서 소프트웨어로 처리하는 옵션이 이 체크박스</span>`}
+      ];
+
+    case 'exposure':
+      return [
+        {n:'5',cls:'handler',title:`${hname(act)}() 실행 — 노출 시간 설정`,
+         body:`텍스트 입력칸에서 값을 읽어서 카메라의 <strong>노출 시간(셔터 속도)</strong>을 설정합니다.<br>
+         단위는 마이크로초(us). 10000 = 0.01초.`,
+         code:`<span class="cm">// iRaypleCxpGrabberDlg.cpp 354번째 줄</span>
+<span class="kw">void</span> CiRaypleCxpGrabberDlg::<span class="fn">OnBnClickedSetExposure</span>()
+{
+    CString valueText;
+    <span class="fn">GetDlgItemText</span>(IDC_EDIT_EXPOSURE, valueText);  <span class="cm">// 입력칸에서 텍스트 가져오기</span>
+    <span class="kw">const int</span> exposureUs = <span class="fn">_ttoi</span>(valueText);       <span class="cm">// 문자열 → 숫자</span>
+
+    <span class="kw">if</span> (exposureUs <= <span class="num">0</span>)
+    {
+        <span class="fn">AfxMessageBox</span>(<span class="st">"양수를 입력하세요"</span>);  <span class="cm">// 에러 팝업</span>
+        <span class="kw">return</span>;
+    }
+
+    <span class="fn">SetExposureTime</span>((double)exposureUs);
+}
+
+<span class="cm">// Python 비유:</span>
+<span class="cm">// value = int(self.entry_exposure.get())</span>
+<span class="cm">// self.camera.set_feature("ExposureTime", value)</span>`},
+        {n:'6',cls:'sapera',title:'SetExposureTime() — 카메라에 적용',
+         body:`카메라마다 지원하는 피쳐 이름이 다를 수 있어서 <strong>여러 방법을 순서대로 시도</strong>합니다.`,
+         code:`<span class="cm">// iRaypleCxpGrabberDlg.cpp 646번째 줄</span>
+<span class="cm">// 3가지 방법을 순서대로 시도 (하나 성공하면 끝)</span>
+
+<span class="cm">// 시도 1: "ExposureTime" (최신 카메라)</span>
+m_acqDevice-><span class="fn">SetFeatureValue</span>(<span class="st">"ExposureTime"</span>, exposureUs);
+
+<span class="cm">// 시도 2: "ExposureTimeAbs" (구형 카메라)</span>
+m_acqDevice-><span class="fn">SetFeatureValue</span>(<span class="st">"ExposureTimeAbs"</span>, exposureUs);
+
+<span class="cm">// 시도 3: Sapera 파라미터 (프레임그래버 직접 제어)</span>
+m_acq-><span class="fn">SetParameter</span>(CORACQ_PRM_CAM_TRIGGER_DURATION, exposureUs);
+
+<span class="cm">// 왜 3가지나?</span>
+<span class="cm">// → 카메라 제조사마다 GenICam 표준을 다르게 구현하기 때문</span>
+<span class="cm">// → "되는 거 찾을 때까지 시도" 전략</span>`}
+      ];
+
+    default: return [];
+  }
+}
+
+// init
+syncUI(); spd();
+</script>
+</body>
+</html>
