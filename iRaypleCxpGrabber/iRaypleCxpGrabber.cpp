@@ -52,6 +52,9 @@ BOOL CiRaypleCxpGrabberApp::InitInstance()
 
 	CWinApp::InitInstance();
 
+	// 메시지 박스 제목에 쓰이는 앱 이름을 고정합니다(EXE 파일명 노출 방지).
+	free((void*)m_pszAppName);
+	m_pszAppName = _tcsdup(_T("iRayple CXP Grabber"));
 
 	AfxEnableControlContainer();
 

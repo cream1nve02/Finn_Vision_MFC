@@ -101,7 +101,8 @@
       <AdditionalDependencies>MVSDKmd.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /Y /D "C:\Program Files\HuarayTech\MV Viewer\Application\x64\MVSDKmd.dll" "$(OutDir)"</Command>
+      <Command>xcopy /Y /D "C:\Program Files\HuarayTech\MV Viewer\Application\x64\MVSDKmd.dll" "$(OutDir)"
+xcopy /Y /D "C:\Program Files\HuarayTech\MV Viewer\Application\x64\VideoRender.dll" "$(OutDir)"</Command>
     </PostBuildEvent>
     <Midl>
       <MkTypLibCompatible>false</MkTypLibCompatible>
@@ -193,7 +194,8 @@
       <AdditionalDependencies>MVSDKmd.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /Y /D "C:\Program Files\HuarayTech\MV Viewer\Application\x64\MVSDKmd.dll" "$(OutDir)"</Command>
+      <Command>xcopy /Y /D "C:\Program Files\HuarayTech\MV Viewer\Application\x64\MVSDKmd.dll" "$(OutDir)"
+xcopy /Y /D "C:\Program Files\HuarayTech\MV Viewer\Application\x64\VideoRender.dll" "$(OutDir)"</Command>
     </PostBuildEvent>
     <Midl>
       <MkTypLibCompatible>false</MkTypLibCompatible>

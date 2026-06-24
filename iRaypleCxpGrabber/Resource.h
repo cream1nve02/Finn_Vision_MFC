@@ -19,6 +19,14 @@
 #define IDC_STATIC_STATUS				1009
 #define IDC_STATIC_EXPOSURE				1010
 #define IDC_CHECK_BAYER					1011
+#define IDC_STATIC_CAMINFO				1012
+#define IDC_STATIC_FPS					1013
+#define IDC_BTN_WB						1014
+#define IDC_CHECK_AUTOWB				1015
+#define IDC_EDIT_WB_R					1016
+#define IDC_EDIT_WB_G					1017
+#define IDC_EDIT_WB_B					1018
+#define IDC_BTN_WB_APPLY				1019
 
 // 다음은 새 개체에 사용할 기본값입니다.
 //
@@ -26,7 +34,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 
 #define _APS_NEXT_RESOURCE_VALUE	129
-#define _APS_NEXT_CONTROL_VALUE		1012
+#define _APS_NEXT_CONTROL_VALUE		1020
 #define _APS_NEXT_SYMED_VALUE		101
 #define _APS_NEXT_COMMAND_VALUE		32771
 #endif

@@ -1,12 +1,23 @@
 ﻿#pragma once
 
+/*
+MFC/Windows 헤더를 가져올 때,
+앱에서 거의 안 쓰는 오래된/부가 기능 선언들은 제외하고
+필요한 핵심 기능 위주를 가져오도록 설정
+-> 빌드 속도와 복잡도 줄이는 목적
+*/
+
 #ifndef VC_EXTRALEAN
-#define VC_EXTRALEAN            // 거의 사용되지 않는 내용은 Windows 헤더에서 제외합니다.
+#define VC_EXTRALEAN           
 #endif
+
+/*
+헤더 불러오기 전에, 이 앱이 사용할 Windows API 기준을 먼저 정함.
+*/
 
 #include "targetver.h"
 
-#define _ATL_CSTRING_EXPLICIT_CONSTRUCTORS      // 일부 CString 생성자는 명시적으로 선언됩니다.
+#define _ATL_CSTRING_EXPLICIT_CONSTRUCTORS      // CString 자동 변환을 조금 더 엄격하게 만드는 옵션
 
 // MFC의 공통 부분과 무시 가능한 경고 메시지에 대한 숨기기를 해제합니다.
 #define _AFX_ALL_WARNINGS

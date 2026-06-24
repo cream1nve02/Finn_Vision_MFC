@@ -84,6 +84,11 @@ CiRaypleCxpGrabberDlg::CiRaypleCxpGrabberDlg(CWnd* pParent /*=nullptr*/)
 	, m_processing(nullptr)
 	, m_view(nullptr)
 	, m_bayerEnabled(FALSE)
+	, m_isColorCamera(true)
+	, m_frameCount(0)
+	, m_lastFrameCount(0)
+	, m_lastFpsTick(0)
+	, m_designWidth(0)
 {
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 }
@@ -101,6 +106,7 @@ BEGIN_MESSAGE_MAP(CiRaypleCxpGrabberDlg, CDialogEx)
 	ON_WM_QUERYDRAGICON()
 	ON_WM_DESTROY()
 	ON_WM_SIZE()
+	ON_WM_TIMER()
 	ON_BN_CLICKED(IDC_BTN_CONNECT, &CiRaypleCxpGrabberDlg::OnBnClickedConnect)
 	ON_BN_CLICKED(IDC_BTN_START, &CiRaypleCxpGrabberDlg::OnBnClickedStart)
 	ON_BN_CLICKED(IDC_BTN_STOP, &CiRaypleCxpGrabberDlg::OnBnClickedStop)
@@ -109,6 +115,9 @@ BEGIN_MESSAGE_MAP(CiRaypleCxpGrabberDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_CHECK_TRIGGER, &CiRaypleCxpGrabberDlg::OnBnClickedTriggerMode)
 	ON_BN_CLICKED(IDC_BTN_SET_EXPOSURE, &CiRaypleCxpGrabberDlg::OnBnClickedSetExposure)
 	ON_BN_CLICKED(IDC_CHECK_BAYER, &CiRaypleCxpGrabberDlg::OnBnClickedBayerMode)
+	ON_BN_CLICKED(IDC_BTN_WB, &CiRaypleCxpGrabberDlg::OnBnClickedWhiteBalance)
+	ON_BN_CLICKED(IDC_CHECK_AUTOWB, &CiRaypleCxpGrabberDlg::OnBnClickedAutoWb)
+	ON_BN_CLICKED(IDC_BTN_WB_APPLY, &CiRaypleCxpGrabberDlg::OnBnClickedWbApply)
 END_MESSAGE_MAP()
 
 
@@ -149,7 +158,63 @@ BOOL CiRaypleCxpGrabberDlg::OnInitDialog()
 	GetWindowText(m_appTitle);
 	SetDlgItemText(IDC_EDIT_EXPOSURE, _T("10000"));
 	CheckDlgButton(IDC_CHECK_BAYER, BST_UNCHECKED);
+
+	// 상단 정보 라벨(카메라 정보 / FPS+노출) 동적 생성.
+	CFont* pFont = GetFont();
+	const CRect z(0, 0, 10, 10);
+	if (!m_camInfoWnd.GetSafeHwnd())
+		m_camInfoWnd.Create(_T("Camera: -"), WS_CHILD | WS_VISIBLE | SS_LEFTNOWORDWRAP, z, this, IDC_STATIC_CAMINFO);
+	if (!m_fpsWnd.GetSafeHwnd())
+		m_fpsWnd.Create(_T("FPS: -"), WS_CHILD | WS_VISIBLE | SS_LEFTNOWORDWRAP, z, this, IDC_STATIC_FPS);
+	if (!m_wbButton.GetSafeHwnd())
+		m_wbButton.Create(_T("화이트밸런스"), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, z, this, IDC_BTN_WB);
+	if (!m_autoWbCheck.GetSafeHwnd())
+		m_autoWbCheck.Create(_T("자동 WB"), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, z, this, IDC_CHECK_AUTOWB);
+	if (!m_wbLabel.GetSafeHwnd())
+		m_wbLabel.Create(_T("WB R/G/B:"), WS_CHILD | WS_VISIBLE | SS_LEFTNOWORDWRAP, z, this);
+	if (!m_wbR.GetSafeHwnd())
+		m_wbR.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, z, this, IDC_EDIT_WB_R);
+	if (!m_wbG.GetSafeHwnd())
+		m_wbG.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, z, this, IDC_EDIT_WB_G);
+	if (!m_wbB.GetSafeHwnd())
+		m_wbB.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, z, this, IDC_EDIT_WB_B);
+	if (!m_wbApply.GetSafeHwnd())
+		m_wbApply.Create(_T("WB 적용"), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, z, this, IDC_BTN_WB_APPLY);
+	m_camInfoWnd.SetFont(pFont);
+	m_fpsWnd.SetFont(pFont);
+	m_wbButton.SetFont(pFont);
+	m_autoWbCheck.SetFont(pFont);
+	m_wbLabel.SetFont(pFont);
+	m_wbR.SetFont(pFont);
+	m_wbG.SetFont(pFont);
+	m_wbB.SetFont(pFont);
+	m_wbApply.SetFont(pFont);
+
+	SetTimer(1, 1000, nullptr);   // FPS/노출 1초마다 갱신
+
+	// 우측 패널 컨트롤의 원위치를 기억(창을 키울 때 오른쪽 가장자리에 고정).
+	CRect rcDesign;
+	GetClientRect(&rcDesign);
+	m_designWidth = rcDesign.Width();
+	const UINT rightIds[] = {
+		IDC_BTN_CONNECT, IDC_BTN_START, IDC_BTN_STOP, IDC_BTN_SNAP,
+		IDC_BTN_SW_TRIGGER, IDC_CHECK_TRIGGER, IDC_STATIC_EXPOSURE,
+		IDC_EDIT_EXPOSURE, IDC_BTN_SET_EXPOSURE, IDC_CHECK_BAYER
+	};
+	for (UINT id : rightIds)
+	{
+		CWnd* w = GetDlgItem(id);
+		if (w && w->GetSafeHwnd())
+		{
+			CRect r;
+			w->GetWindowRect(&r);
+			ScreenToClient(&r);
+			m_rightAnchored.push_back(std::make_pair(id, r));
+		}
+	}
+
 	UpdateUiState();
+	LayoutControls(rcDesign.Width(), rcDesign.Height());
 
 	return TRUE;  // 포커스를 컨트롤에 설정하지 않으면 TRUE를 반환합니다.
 }
@@ -205,6 +270,7 @@ HCURSOR CiRaypleCxpGrabberDlg::OnQueryDragIcon()
 
 void CiRaypleCxpGrabberDlg::OnDestroy()
 {
+	KillTimer(1);
 	CDialogEx::OnDestroy();
 	DeleteSaperaObjects();
 }
@@ -212,14 +278,66 @@ void CiRaypleCxpGrabberDlg::OnDestroy()
 void CiRaypleCxpGrabberDlg::OnSize(UINT nType, int cx, int cy)
 {
 	CDialogEx::OnSize(nType, cx, cy);
+	LayoutControls(cx, cy);
+}
 
-	if (!m_viewWnd.GetSafeHwnd() || cx <= 0 || cy <= 0)
+void CiRaypleCxpGrabberDlg::LayoutControls(int cx, int cy)
+{
+	if (!m_viewWnd.GetSafeHwnd() || cx <= 0 || cy <= 0 || m_designWidth <= 0)
 		return;
 
 	const int margin = 10;
-	const int panelWidth = 170;
 	const int statusHeight = 22;
-	m_viewWnd.MoveWindow(margin, margin, max(100, cx - panelWidth - margin * 3), max(100, cy - statusHeight - margin * 3));
+	const int rowH = 18;
+
+	// 우측 패널 컨트롤을 오른쪽 가장자리에 붙인다(x만 이동).
+	const int dx = cx - m_designWidth;
+	int panelLeft = cx;
+	for (auto& it : m_rightAnchored)
+	{
+		CWnd* w = GetDlgItem(it.first);
+		if (w && w->GetSafeHwnd())
+		{
+			CRect r = it.second;
+			r.OffsetRect(dx, 0);
+			w->MoveWindow(r);
+			panelLeft = min(panelLeft, static_cast<int>(r.left));
+		}
+	}
+
+	// 상단 정보 스트립
+	//  1행: 카메라명(좌) + FPS·노출(우)
+	//  2행: 화이트밸런스(1회) + 자동 WB
+	//  3행: WB R/G/B 입력 + 적용
+	const int stripW = max(100, panelLeft - margin * 2);
+	const int fpsW = 320;
+	const int camW = max(120, stripW - fpsW - 8);
+	if (m_camInfoWnd.GetSafeHwnd())
+		m_camInfoWnd.MoveWindow(margin, margin, camW, rowH);
+	if (m_fpsWnd.GetSafeHwnd())
+		m_fpsWnd.MoveWindow(margin + camW + 8, margin, fpsW, rowH);
+
+	const int row2y = margin + (rowH + 4);
+	if (m_wbButton.GetSafeHwnd())
+		m_wbButton.MoveWindow(margin, row2y, 100, rowH + 6);
+	if (m_autoWbCheck.GetSafeHwnd())
+		m_autoWbCheck.MoveWindow(margin + 108, row2y, 110, rowH + 4);
+
+	const int row3y = margin + (rowH + 4) * 2;
+	if (m_wbLabel.GetSafeHwnd())
+		m_wbLabel.MoveWindow(margin, row3y + 3, 66, rowH);
+	if (m_wbR.GetSafeHwnd())
+		m_wbR.MoveWindow(margin + 70, row3y, 48, rowH + 4);
+	if (m_wbG.GetSafeHwnd())
+		m_wbG.MoveWindow(margin + 122, row3y, 48, rowH + 4);
+	if (m_wbB.GetSafeHwnd())
+		m_wbB.MoveWindow(margin + 174, row3y, 48, rowH + 4);
+	if (m_wbApply.GetSafeHwnd())
+		m_wbApply.MoveWindow(margin + 230, row3y, 70, rowH + 6);
+
+	// 영상 영역은 스트립(3행) 아래로.
+	const int viewTop = margin + (rowH + 4) * 3;
+	m_viewWnd.MoveWindow(margin, viewTop, stripW, max(100, cy - statusHeight - margin * 2 - viewTop));
 
 	if (m_statusWnd.GetSafeHwnd())
 		m_statusWnd.MoveWindow(margin, cy - statusHeight - margin, max(100, cx - margin * 2), statusHeight);
@@ -233,6 +351,19 @@ void CiRaypleCxpGrabberDlg::OnBnClickedConnect()
 	if (m_acq)
 	{
 		DeleteSaperaObjects();
+
+		// 끊으면 SapView 마지막 프레임 잔상을 지워 "무신호"처럼 까맣게 만든다.
+		if (m_viewWnd.GetSafeHwnd())
+		{
+			CClientDC dc(&m_viewWnd);
+			CRect rc;
+			m_viewWnd.GetClientRect(&rc);
+			dc.FillSolidRect(rc, RGB(0, 0, 0));
+		}
+
+		SetWindowText(m_appTitle);
+		if (m_camInfoWnd.GetSafeHwnd())
+			m_camInfoWnd.SetWindowText(_T("Camera: -"));
 		SetStatus(_T("Disconnected"));
 		UpdateUiState();
 		return;
@@ -268,6 +399,11 @@ void CiRaypleCxpGrabberDlg::OnBnClickedConnect()
 
 	m_acq = new SapAcquisition(loc, configFile);
 	CreateCameraFeatureDevice(serverName, resourceIndex);
+
+	// 컬러(베이어) 카메라면 자동으로 Bayer 디베이어를 켠다(연결 시점에 결정됨).
+	m_isColorCamera = DetectColorCamera();
+	CheckDlgButton(IDC_CHECK_BAYER, m_isColorCamera ? BST_CHECKED : BST_UNCHECKED);
+
 	m_buffers = new SapBufferWithTrash(2, m_acq);
 	m_xfer = new SapAcqToBuf(m_acq, m_buffers, XferCallback, this);
 	m_bayerEnabled = IsDlgButtonChecked(IDC_CHECK_BAYER) == BST_CHECKED;
@@ -287,6 +423,14 @@ void CiRaypleCxpGrabberDlg::OnBnClickedConnect()
 		UpdateUiState();
 		return;
 	}
+
+	// 카메라 정보(모델/시리얼/해상도/픽셀포맷/Color·Mono)를 읽어 라벨·제목에 표시.
+	ReadCameraInfo();
+	if (m_camInfoWnd.GetSafeHwnd())
+		m_camInfoWnd.SetWindowText(_T("Camera: ") + (m_cameraInfo.IsEmpty() ? CString(_T("(unknown)")) : m_cameraInfo));
+	if (!m_cameraInfo.IsEmpty())
+		SetWindowText(m_appTitle + _T("  -  ") + m_cameraInfo);
+	UpdateWbEdits();   // 현재 WB(R/G/B) 비율 표시
 
 	CString status;
 	status.Format(_T("Connected: %s / resource %d%s"),
@@ -358,17 +502,44 @@ void CiRaypleCxpGrabberDlg::OnBnClickedSetExposure()
 
 	CString valueText;
 	GetDlgItemText(IDC_EDIT_EXPOSURE, valueText);
-	const int exposureUs = _ttoi(valueText);
-	if (exposureUs <= 0)
+	const double exposureUs = _ttof(valueText);
+	if (exposureUs <= 0.0)
 	{
-		AfxMessageBox(_T("Exposure must be a positive integer in microseconds."));
+		AfxMessageBox(_T("노출시간은 0보다 큰 숫자(us)여야 합니다."), MB_ICONWARNING);
+		SetStatus(_T("Invalid exposure value"));
 		return;
 	}
 
-	if (SetExposureTime(static_cast<double>(exposureUs)))
+	// 카메라가 보고하는 허용 범위와 비교 — 벗어나면 거부하고 현재값을 유지·표시한다.
+	double expMin = 0.0, expMax = 0.0;
+	if (GetExposureRange(expMin, expMax) && (exposureUs < expMin || exposureUs > expMax))
+	{
+		double cur = 0.0;
+		const bool haveCur = GetExposureValue(cur);
+		CString msg;
+		if (haveCur)
+			msg.Format(_T("노출값이 허용 범위를 벗어났습니다.\n\n입력값: %.1f us\n허용 범위: %.1f ~ %.1f us\n\n현재 노출값 %.1f us 를 유지합니다."),
+				exposureUs, expMin, expMax, cur);
+		else
+			msg.Format(_T("노출값이 허용 범위를 벗어났습니다.\n\n입력값: %.1f us\n허용 범위: %.1f ~ %.1f us"),
+				exposureUs, expMin, expMax);
+		AfxMessageBox(msg, MB_ICONWARNING);
+		if (haveCur)
+		{
+			CString curText;
+			curText.Format(_T("%.0f"), cur);
+			SetDlgItemText(IDC_EDIT_EXPOSURE, curText);
+		}
+		CString st;
+		st.Format(_T("Exposure out of range (allowed %.0f - %.0f us) — 기존값 유지"), expMin, expMax);
+		SetStatus(st);
+		return;
+	}
+
+	if (SetExposureTime(exposureUs))
 	{
 		CString status;
-		status.Format(_T("Exposure set to %d us"), exposureUs);
+		status.Format(_T("Exposure set to %.0f us"), exposureUs);
 		SetStatus(status);
 	}
 	else
@@ -505,6 +676,15 @@ void CiRaypleCxpGrabberDlg::UpdateUiState()
 	GetDlgItem(IDC_CHECK_BAYER)->EnableWindow(!connected);
 	GetDlgItem(IDC_EDIT_EXPOSURE)->EnableWindow(connected);
 	GetDlgItem(IDC_BTN_SET_EXPOSURE)->EnableWindow(connected);
+
+	// 화이트밸런스는 컬러 카메라일 때만.
+	const BOOL wbOk = connected && m_isColorCamera;
+	if (m_wbButton.GetSafeHwnd())    m_wbButton.EnableWindow(wbOk);
+	if (m_autoWbCheck.GetSafeHwnd()) m_autoWbCheck.EnableWindow(wbOk);
+	if (m_wbR.GetSafeHwnd())         m_wbR.EnableWindow(wbOk);
+	if (m_wbG.GetSafeHwnd())         m_wbG.EnableWindow(wbOk);
+	if (m_wbB.GetSafeHwnd())         m_wbB.EnableWindow(wbOk);
+	if (m_wbApply.GetSafeHwnd())     m_wbApply.EnableWindow(wbOk);
 }
 
 void CiRaypleCxpGrabberDlg::SetStatus(const CString& text)
@@ -559,6 +739,7 @@ BOOL CiRaypleCxpGrabberDlg::CreateCameraFeatureDevice(const CStringA& serverName
 		return FALSE;
 
 	SapLocation deviceLoc(serverName, min(resourceIndex, deviceCount - 1));
+	m_acqDeviceLoc = deviceLoc;   // SapFeature(노출 범위 등) 조회용으로 보관
 
 	m_acqDevice = new SapAcqDevice(deviceLoc, FALSE);
 	if (m_acqDevice->Create())
@@ -700,6 +881,8 @@ void CiRaypleCxpGrabberDlg::XferCallback(SapXferCallbackInfo* pInfo)
 		return;
 	}
 
+	dlg->m_frameCount.fetch_add(1);   // FPS 계산용
+
 	if (dlg->m_processing && *dlg->m_processing)
 	{
 		dlg->m_processing->Execute();
@@ -726,5 +909,230 @@ void CiRaypleCxpGrabberDlg::ProCallback(SapProCallbackInfo* pInfo)
 	}
 
 	dlg->m_view->Show();
+}
+
+void CiRaypleCxpGrabberDlg::OnTimer(UINT_PTR nIDEvent)
+{
+	if (nIDEvent == 1)
+	{
+		const ULONGLONG now = GetTickCount64();
+		const long long cnt = m_frameCount.load();
+		double fps = 0.0;
+		if (m_lastFpsTick != 0 && now > m_lastFpsTick)
+			fps = static_cast<double>(cnt - m_lastFrameCount) * 1000.0 / static_cast<double>(now - m_lastFpsTick);
+		m_lastFpsTick = now;
+		m_lastFrameCount = cnt;
+
+		if (m_fpsWnd.GetSafeHwnd())
+		{
+			CString s;
+			double expUs = 0.0;
+			if (GetExposureValue(expUs))
+				s.Format(_T("FPS: %.1f   노출: %.0f us"), fps, expUs);
+			else
+				s.Format(_T("FPS: %.1f"), fps);
+			m_fpsWnd.SetWindowText(s);
+		}
+	}
+	CDialogEx::OnTimer(nIDEvent);
+}
+
+CString CiRaypleCxpGrabberDlg::GetCameraFeatureString(const char* featureName)
+{
+	if (!m_acqDevice || !*m_acqDevice)
+		return CString();
+	BOOL available = FALSE;
+	if (!m_acqDevice->IsFeatureAvailable(featureName, &available) || !available)
+		return CString();
+	char buf[256] = {};
+	if (!m_acqDevice->GetFeatureValue(featureName, buf, sizeof(buf)))
+		return CString();
+	return CString(buf);
+}
+
+bool CiRaypleCxpGrabberDlg::DetectColorCamera()
+{
+	const CString pf = GetCameraFeatureString("PixelFormat");
+	if (pf.IsEmpty())
+		return false;
+	CString low = pf;
+	low.MakeLower();
+	return low.Find(_T("bayer")) >= 0 || low.Find(_T("rgb")) >= 0 ||
+		low.Find(_T("bgr")) >= 0 || low.Find(_T("yuv")) >= 0 || low.Find(_T("ycbcr")) >= 0;
+}
+
+void CiRaypleCxpGrabberDlg::ReadCameraInfo()
+{
+	m_cameraInfo.Empty();
+	if (!m_acqDevice || !*m_acqDevice)
+		return;
+
+	const CString vendor = GetCameraFeatureString("DeviceVendorName");
+	const CString model  = GetCameraFeatureString("DeviceModelName");
+	const CString sn     = GetCameraFeatureString("DeviceSerialNumber");
+	const CString pf     = GetCameraFeatureString("PixelFormat");
+
+	CString s;
+	if (!vendor.IsEmpty())
+		s += vendor + _T(" ");
+	s += model.IsEmpty() ? CString(_T("(camera)")) : model;
+	if (!sn.IsEmpty())
+		s += _T(" (SN ") + sn + _T(")");
+	s += _T(" [CXP]");
+
+	INT64 w = 0, h = 0;
+	if (m_acqDevice->GetFeatureValue("Width", &w) && m_acqDevice->GetFeatureValue("Height", &h) && w > 0 && h > 0)
+	{
+		CString res;
+		res.Format(_T(" %lldx%lld"), static_cast<long long>(w), static_cast<long long>(h));
+		s += res;
+	}
+	if (!pf.IsEmpty())
+		s += _T(" ") + pf;
+	s += m_isColorCamera ? _T(" / Color") : _T(" / Mono");
+	s.Trim();
+	m_cameraInfo = s;
+}
+
+bool CiRaypleCxpGrabberDlg::GetExposureValue(double& outUs)
+{
+	if (!m_acqDevice || !*m_acqDevice)
+		return false;
+	BOOL avail = FALSE;
+	if (m_acqDevice->IsFeatureAvailable("ExposureTime", &avail) && avail &&
+		m_acqDevice->GetFeatureValue("ExposureTime", &outUs))
+		return true;
+	if (m_acqDevice->IsFeatureAvailable("ExposureTimeAbs", &avail) && avail &&
+		m_acqDevice->GetFeatureValue("ExposureTimeAbs", &outUs))
+		return true;
+	return false;
+}
+
+bool CiRaypleCxpGrabberDlg::GetExposureRange(double& outMin, double& outMax)
+{
+	if (!m_acqDevice || !*m_acqDevice)
+		return false;
+
+	const char* names[] = { "ExposureTime", "ExposureTimeAbs" };
+	for (const char* name : names)
+	{
+		BOOL avail = FALSE;
+		if (!m_acqDevice->IsFeatureAvailable(name, &avail) || !avail)
+			continue;
+
+		SapFeature feature(m_acqDeviceLoc);
+		if (!feature.Create())
+			continue;
+
+		double mn = 0.0, mx = 0.0;
+		const BOOL ok = m_acqDevice->GetFeatureInfo(name, &feature) &&
+			feature.GetMin(&mn) && feature.GetMax(&mx);
+		feature.Destroy();
+
+		if (ok)
+		{
+			outMin = mn;
+			outMax = mx;
+			return true;
+		}
+	}
+	return false;
+}
+
+BOOL CiRaypleCxpGrabberDlg::SetWhiteBalanceAuto(const char* mode)
+{
+	if (!SetCameraFeatureString("BalanceWhiteAuto", mode))
+		return FALSE;
+	if (m_acqDevice && *m_acqDevice)
+		m_acqDevice->UpdateFeaturesToDevice();
+	return TRUE;
+}
+
+bool CiRaypleCxpGrabberDlg::GetBalanceRatio(const char* channel, double& outValue)
+{
+	if (!m_acqDevice || !*m_acqDevice)
+		return false;
+	BOOL avail = FALSE;
+	if (!m_acqDevice->IsFeatureAvailable("BalanceRatioSelector", &avail) || !avail)
+		return false;
+	if (!m_acqDevice->SetFeatureValue("BalanceRatioSelector", channel))
+		return false;
+	m_acqDevice->UpdateFeaturesToDevice();
+	return m_acqDevice->GetFeatureValue("BalanceRatio", &outValue) == TRUE;
+}
+
+BOOL CiRaypleCxpGrabberDlg::SetBalanceRatio(const char* channel, double value)
+{
+	if (!m_acqDevice || !*m_acqDevice)
+		return FALSE;
+	BOOL avail = FALSE;
+	if (!m_acqDevice->IsFeatureAvailable("BalanceRatioSelector", &avail) || !avail)
+		return FALSE;
+	if (!m_acqDevice->SetFeatureValue("BalanceRatioSelector", channel))
+		return FALSE;
+	if (!m_acqDevice->SetFeatureValue("BalanceRatio", value))
+		return FALSE;
+	m_acqDevice->UpdateFeaturesToDevice();
+	return TRUE;
+}
+
+void CiRaypleCxpGrabberDlg::UpdateWbEdits()
+{
+	double v = 0.0;
+	if (m_wbR.GetSafeHwnd() && GetBalanceRatio("Red", v))   { CString s; s.Format(_T("%.2f"), v); m_wbR.SetWindowText(s); }
+	if (m_wbG.GetSafeHwnd() && GetBalanceRatio("Green", v)) { CString s; s.Format(_T("%.2f"), v); m_wbG.SetWindowText(s); }
+	if (m_wbB.GetSafeHwnd() && GetBalanceRatio("Blue", v))  { CString s; s.Format(_T("%.2f"), v); m_wbB.SetWindowText(s); }
+}
+
+void CiRaypleCxpGrabberDlg::OnBnClickedWhiteBalance()
+{
+	if (!m_acqDevice || !*m_acqDevice)
+		return;
+	if (SetWhiteBalanceAuto("Once"))
+	{
+		if (m_autoWbCheck.GetSafeHwnd())
+			m_autoWbCheck.SetCheck(BST_UNCHECKED);
+		UpdateWbEdits();
+		SetStatus(_T("White balance: once 적용"));
+	}
+	else
+	{
+		SetStatus(_T("White balance 실패 (BalanceWhiteAuto 미지원/연결 확인)"));
+	}
+}
+
+void CiRaypleCxpGrabberDlg::OnBnClickedAutoWb()
+{
+	if (!m_acqDevice || !*m_acqDevice)
+		return;
+	const bool on = (m_autoWbCheck.GetCheck() == BST_CHECKED);
+	if (SetWhiteBalanceAuto(on ? "Continuous" : "Off"))
+		SetStatus(on ? _T("White balance: continuous") : _T("White balance: off"));
+	else
+		SetStatus(_T("White balance 모드 변경 실패"));
+}
+
+void CiRaypleCxpGrabberDlg::OnBnClickedWbApply()
+{
+	if (!m_acqDevice || !*m_acqDevice)
+		return;
+
+	SetWhiteBalanceAuto("Off");
+	if (m_autoWbCheck.GetSafeHwnd())
+		m_autoWbCheck.SetCheck(BST_UNCHECKED);
+
+	CString rs, gs, bs;
+	m_wbR.GetWindowText(rs);
+	m_wbG.GetWindowText(gs);
+	m_wbB.GetWindowText(bs);
+	const double r = _ttof(rs), g = _ttof(gs), b = _ttof(bs);
+
+	BOOL ok = TRUE;
+	if (r > 0.0) ok = SetBalanceRatio("Red", r) && ok;
+	if (g > 0.0) ok = SetBalanceRatio("Green", g) && ok;
+	if (b > 0.0) ok = SetBalanceRatio("Blue", b) && ok;
+
+	UpdateWbEdits();
+	SetStatus(ok ? _T("White balance 수동 적용") : _T("White balance 수동 적용 일부 실패"));
 }
 
